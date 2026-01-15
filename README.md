@@ -81,9 +81,7 @@ BM-GamePod/
 ---
 
 ## License
-
-TBD（必要に応じて追記してください）
-- 例：MIT / Apache-2.0 / CC BY など
+MIT
 
 ---
 
