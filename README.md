@@ -1,19 +1,29 @@
 # BM-GamePod
+BM(ブレッドメイカー)シリーズの誰でも簡単に作れるシンプルなゲーム機です。
 
-BM-GamePod のハード（STL）とソフト（Arduinoスケッチ／Webツール）をまとめたリポジトリです。
+
+# 自作小型ゲーム機プロジェクト
+
+![完成写真](images/GamePod.jpg)
+
+## 概要
+本リポジトリは、自作した小型ゲーム機の  
+- **ケース(3Dプリンタ用 / 素材：PLA)**
+- **ゲームのソースコード**
+- **キャラクタの変更方法の紹介()**
+
+を公開するものです。
+
+自分でケースを出力し、ソフトを書き込むことで、  
+オリジナルの小型ゲーム機として動作します。
+(キット購入の方は、ケースの出力は不要です)
+ハードの説明と組み立て方は、ProtoPedia GamePodの記事(<a href="https://protopedia.net/prototype/private/e5fad012-32e8-4cfa-9808-c9ff6ae638b0">@YugiTechLab</a>)を参考にしてください。
 
 ---
 
 ## Links
 
-### Tools（ブラウザで動く）
-- OLED Dot Editor  
-  https://yugi-tech-lab.github.io/BM-GamePod/sw/tools/oled_dot_editor.html
 
-（GitHub上のファイルはこちら）  
-- https://github.com/yugi-tech-lab/BM-GamePod/blob/main/sw/tools/oled_dot_editor.html
-
----
 
 ## Firmware（Arduino）
 
@@ -27,18 +37,9 @@ BM-GamePod のハード（STL）とソフト（Arduinoスケッチ／Webツー�
 
 ---
 
-## Tools 設定
-
-- 設定ファイル：`sw/tools/config.js`
-
-例：PC送信先などをここで調整します（必要な場合のみ編集）。
-```js
-// sw/tools/config.js
-// PC送信用設定（ここだけ編集すればOK）
-const PC_URL = "http://192.168.11.7:8000";
-```
-
----
+### Tools（ブラウザで動く）
+- OLED Dot Editor  
+  https://yugi-tech-lab.github.io/BM-GamePod/sw/tools/oled_dot_editor.html
 
 ## Hardware
 
