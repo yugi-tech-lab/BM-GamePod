@@ -28,8 +28,10 @@ BM(ブレッドメイカー)シリーズの誰でも簡単に作れるシンプ�
 ---
 
 ### Tools
-- OLED Dot Editor（ゲームのキャラを差し替え！） 
+- OLED Dot Editor
 https://yugi-tech-lab.github.io/BM-GamePod/sw/tools/oled_dot_editor.html
+
+自作ドットでゲームのキャラを差し替え可能です 
 
 ## Hardware
 
