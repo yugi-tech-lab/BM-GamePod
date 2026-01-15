@@ -83,8 +83,8 @@ BM(ブレッドメイカー)シリーズの誰でも簡単に作れるシンプ�
 公開後はこのURLを開くだけで DevTools に入れます。
 
 ## 3. DevTools のURL（直接リンク）
-- `https://<ユーザー名>.github.io/<リポジトリ名>/soft/devtools/GamePrompter.html`
-- `https://<ユーザー名>.github.io/<リポジトリ名>/soft/devtools/DotImageEditor.html`
+- `https://github.com/yugi-tech-lab/BM-GamePod/soft/devtools/GamePrompter.html`
+- `https://github.com/yugi-tech-lab/BM-GamePod/soft/devtools/DotImageEditor.html`
 
 ## 4. ページ内に「共有リンク」を表示（追加済み）
 各HTMLの右下に小さなボックスを追加しています：
