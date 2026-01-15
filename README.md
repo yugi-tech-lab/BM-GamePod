@@ -4,7 +4,8 @@ BM(ブレッドメイカー)シリーズの誰でも簡単に作れるシンプ�
 
 # 自作小型ゲーム機プロジェクト
 
-![完成写真](images/GamePod.jpg)
+![GamePod](https://github.com/user-attachments/assets/0016645f-4d75-4854-8455-a5b343260546)
+
 
 ## 概要
 本リポジトリは、自作した小型ゲーム機の  
