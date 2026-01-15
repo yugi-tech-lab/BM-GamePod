@@ -3,142 +3,38 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BM-GamePod DevTools</title>
+  <title>BM-GamePod</title>
   <style>
-    :root{
-      --bd: rgba(0,0,0,0.14);
-      --bg: #ffffff;
-      --card: #ffffff;
-      --muted: rgba(0,0,0,0.70);
-    }
-    body{
-      font-family: system-ui, -apple-system, "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif;
-      margin: 24px;
-      background: var(--bg);
-      color: #111;
-    }
-    .card{
-      max-width: 920px;
-      margin: 0 auto;
-      border: 1px solid var(--bd);
-      border-radius: 18px;
-      padding: 18px 18px;
-      background: var(--card);
-      box-shadow: 0 6px 18px rgba(0,0,0,0.05);
-    }
-    h1{ margin: 0 0 10px; font-size: 1.45rem; }
-    p{ margin: 6px 0; line-height: 1.65; }
-    .links{ display:flex; gap:12px; flex-wrap:wrap; margin-top: 12px; }
-    a.btn{
-      display:inline-block;
-      padding: 10px 14px;
-      border-radius: 14px;
-      border: 1px solid rgba(0,0,0,0.18);
-      text-decoration:none;
-      color: inherit;
-      background: rgba(255,255,255,0.9);
-    }
-    a.btn:hover{ background: rgba(0,0,0,0.04); }
-    .muted{ color: var(--muted); font-size: 0.95rem; }
-    code{ background: rgba(0,0,0,0.06); padding: 2px 6px; border-radius: 8px; }
-    .share{
-      margin-top: 14px;
-      padding: 12px 12px;
-      border: 1px dashed rgba(0,0,0,0.22);
-      border-radius: 14px;
-      background: rgba(0,0,0,0.02);
-    }
-    .share-row{ display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-    .pill{
-      display:inline-flex;
-      gap:8px;
-      align-items:center;
-      border: 1px solid rgba(0,0,0,0.14);
-      border-radius: 999px;
-      padding: 6px 10px;
-      background: rgba(255,255,255,0.9);
-      font-size: 0.92rem;
-    }
-    button.copy{
-      border: 1px solid rgba(0,0,0,0.18);
-      border-radius: 12px;
-      padding: 6px 10px;
-      background: #fff;
-      cursor: pointer;
-    }
-    button.copy:hover{ background: rgba(0,0,0,0.04); }
+    body { font-family: system-ui, -apple-system, "Hiragino Maru Gothic ProN", "Yu Gothic", sans-serif; margin: 20px; line-height: 1.6; }
+    .card { max-width: 760px; margin: 0 auto; padding: 16px; border: 1px solid #ddd; border-radius: 12px; }
+    h1 { margin: 0 0 8px; }
+    ul { padding-left: 18px; }
+    a { word-break: break-all; }
+    .small { color:#666; font-size: 0.95rem; }
+    .pill { display:inline-block; padding:2px 8px; border:1px solid #ddd; border-radius:999px; font-size:0.85rem; color:#555; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>BM-GamePod DevTools</h1>
-    <p class="muted">このページは <b>GitHub Pages</b> 公開用の入口です。</p>
+    <h1>BM-GamePod <span class="pill">Links</span></h1>
+    <p class="small">このページは公開用の入口です。</p>
 
-    <div class="links">
-      <a class="btn" href="soft/devtools/GamePrompter.html">🎮 GamePrompter（プロンプト生成）</a>
-      <a class="btn" href="soft/devtools/DotImageEditor.html">🧩 DotImageEditor（ドット絵）</a>
-    </div>
+    <h2>Tools（ブラウザで動く）</h2>
+    <ul>
+      <li><a href="./sw/tools/oled_dot_editor.html">OLED Dot Editor</a></li>
+    </ul>
 
-    <div class="share">
-      <p class="muted" style="margin:0 0 8px;">
-        共有用リンク：公開URL（GitHub Pages）をコピーできます。
-      </p>
-      <div class="share-row">
-        <span class="pill">
-          <span>🌐</span>
-          <a id="pagesHome" href="#" target="_blank" rel="noreferrer">（URL）</a>
-        </span>
-        <button class="copy" id="copyHome">URLコピー</button>
-        <span class="pill">
-          <span>🐙</span>
-          <a id="repoLink" href="#" target="_blank" rel="noreferrer">GitHubリポジトリ</a>
-        </span>
-      </div>
-    </div>
+    <h2>Firmware（Arduino）</h2>
+    <ul>
+      <li><a href="./sw/bm_gamepod/bm_gamepod.ino">bm_gamepod.ino</a></li>
+    </ul>
 
-    <p class="muted" style="margin-top:14px;">
-      PC送信先は <code>soft/devtools/config.js</code> の <code>PC_URL</code> を編集してください。
-    </p>
+    <h2>Repository</h2>
+    <ul>
+      <li><a href="https://github.com/yugi-tech-lab/BM-GamePod">GitHub</a></li>
+      <li><a href="./README.md">README</a></li>
+      <li><a href="./LICENSE">LICENSE</a></li>
+    </ul>
   </div>
-
-  <script>
-    // GitHub Pages の「リポジトリ配下URL」を想定（例: https://<user>.github.io/<repo>/）
-    const repoUrl = "https://github.com/yugi-tech-lab/BM-GamePod";
-    const homeUrl = (function(){
-      // 現在URLの末尾が index.html でも / でも、必ず / で終わる「ルートURL」に寄せる
-      const u = new URL(window.location.href);
-      // /.../index.html -> /.../
-      u.pathname = u.pathname.replace(/\/index\.html?$/i, "/");
-      // 末尾がファイルならフォルダへ
-      if (!u.pathname.endsWith("/")) u.pathname = u.pathname.replace(/\/[^\/]*$/, "/");
-      return u.toString();
-    })();
-
-    const pagesHome = document.getElementById("pagesHome");
-    pagesHome.href = homeUrl;
-    pagesHome.textContent = homeUrl;
-
-    const repoLink = document.getElementById("repoLink");
-    repoLink.href = repoUrl;
-
-    const copyBtn = document.getElementById("copyHome");
-    copyBtn.addEventListener("click", async () => {
-      try{
-        await navigator.clipboard.writeText(homeUrl);
-        copyBtn.textContent = "コピーしました！";
-        setTimeout(()=> copyBtn.textContent="URLコピー", 1200);
-      }catch(e){
-        // フォールバック
-        const ta = document.createElement("textarea");
-        ta.value = homeUrl;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-        copyBtn.textContent = "コピーしました！";
-        setTimeout(()=> copyBtn.textContent="URLコピー", 1200);
-      }
-    });
-  </script>
 </body>
 </html>

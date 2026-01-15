@@ -1,0 +1,625 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>ドット絵ワークショップ（可変サイズ対応）</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+body{
+  font-family: system-ui, sans-serif;
+  margin:20px;
+  user-select:none;
+  display:flex;             /* 全体を中央寄せ */
+  justify-content:center;   /* 横方向中央 */
+  align-items:flex-start;   /* 縦は上揃え */
+}
+.topRow{
+  display:flex;
+  gap:16px;
+  align-items:flex-start;
+  width:100%;
+  max-width:960px;          /* セット全体の最大幅 */
+}
+.leftColumn{
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+  flex:1 1 auto;
+}
+#viewCanvas{
+  border:2px solid #333;
+  width:95vw;
+  max-width:600px;
+  aspect-ratio:1/1;
+  image-rendering:pixelated;
+  touch-action:none;
+}
+
+/* 右パネル（全体） */
+.rightPanel{
+  width:280px;
+  display:flex;
+  flex-direction:column;
+  gap:12px;
+}
+@media(max-width:900px){
+  .topRow{
+    flex-wrap:wrap;
+  }
+  .rightPanel{
+    width:100%;
+  }
+}
+
+/* カード（エリア） */
+.card{
+  background:#f7f7f7;
+  border-radius:14px;
+  padding:14px;
+  border:1px solid #e5e5e5;
+}
+.card h2{
+  font-size:16px;
+  margin:0 0 10px 0;
+}
+
+/* 共通ボタン/セレクト */
+.rightPanel button,
+.rightPanel select,
+.card button,
+.card select{
+  font-size:18px;
+  padding:14px;
+  border-radius:12px;
+  border:none;
+  width:100%;
+  box-sizing:border-box;
+}
+
+/* 2列グリッド */
+.grid2{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+}
+
+/* シフト十字 */
+.dpad{
+  display:grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap:10px;
+}
+.dpad .spacer{
+  visibility:hidden;
+}
+
+/* サイズ入力用 */
+.sizeRow{
+  display:grid;
+  grid-template-columns: 1fr 1fr;
+  gap:10px;
+  margin-bottom:10px;
+  font-size:14px;
+}
+.sizeRow label{
+  display:flex;
+  flex-direction:column;
+  gap:4px;
+}
+.sizeRow input{
+  font-size:16px;
+  padding:6px;
+  border-radius:8px;
+  border:1px solid #bbb;
+  box-sizing:border-box;
+}
+
+/* 色 */
+.btnBlack{background:#222;color:#fff;}
+.btnWhite{background:#fff;color:#000;border:2px solid #999;}
+.btnActive{outline:4px solid #4da3ff;}
+
+/* 操作 */
+.btnUndo{background:#cce7ff;}
+.btnClear{background:#ffb3b3;}
+.btnFlip{background:#ffd27f;}
+.btnShift{background:#e0d4ff;}
+.btnSample{background:#7ee28b;}
+.btnRegister{background:#b28cff;color:#fff;}
+.btnDelete{background:#ff9999;}
+.btnCode{background:#ffe76a;}
+.btnCopy{background:#d7ffd9;}
+.btnSend{background:#4da3ff;color:#fff;}
+
+/* OLEDコードカード（キャンバスの下） */
+#oledCard{
+  max-width:600px;
+  width:95vw;
+  background:#f7f7f7;
+  border-radius:14px;
+  padding:14px;
+  border:1px solid #e5e5e5;
+}
+#codeArea{
+  margin-top:8px;
+  display:none;
+  border:1px solid #ddd;
+  border-radius:12px;
+  padding:12px;
+  background:#fafafa;
+}
+#varName{
+  width:100%;
+  font-size:18px;
+  padding:14px;
+  border-radius:12px;
+  border:1px solid #ccc;
+  box-sizing:border-box;
+  background:#eee;
+  color:#666;
+}
+#codeText{
+  width:100%;
+  min-height:220px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size:12px;
+  white-space:pre;
+  padding:10px;
+  border-radius:10px;
+  border:1px solid #ccc;
+  box-sizing:border-box;
+}
+.smallNote{
+  font-size:12px;
+  color:#666;
+  margin-top:8px;
+  line-height:1.35;
+}
+</style>
+</head>
+<body>
+
+<!-- ★ PC送信設定を先に読み込む（config.js） -->
+<script src="config.js"></script>
+
+<div class="topRow">
+  <!-- 左：ドット絵＋OLEDコード -->
+  <div class="leftColumn">
+    <canvas id="viewCanvas" width="600" height="600"></canvas>
+
+    <!-- ★ OLEDコード：ドット絵の「下」にまとめて配置 -->
+    <div id="oledCard">
+      <h2>OLEDコード</h2>
+      <button id="codeBtn" class="btnCode">コードをつくる</button>
+
+      <div id="codeArea">
+        <input id="varName" value="PLAYER_BMP" readonly>
+        <textarea id="codeText" readonly></textarea>
+
+        <div class="grid2" style="margin-top:10px;">
+          <button id="copyBtn" class="btnCopy">コピー</button>
+          <button id="sendBtn" class="btnSend">PCへ送信</button>
+        </div>
+
+        <div class="smallNote" id="codeHint"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 右：そうさ・サンプル -->
+  <div class="rightPanel">
+
+    <!-- 操作エリア -->
+    <div class="card">
+      <h2>そうさ</h2>
+
+      <!-- サイズ指定（デフォルト 20×20） -->
+      <div class="sizeRow">
+        <label>
+          よこ（マス）
+          <input id="gridWInput" type="number" min="4" max="32" value="20">
+        </label>
+        <label>
+          たて（マス）
+          <input id="gridHInput" type="number" min="4" max="32" value="20">
+        </label>
+      </div>
+
+      <div class="grid2" style="margin-bottom:10px;">
+        <button id="blackBtn" class="btnBlack btnActive">くろ</button>
+        <button id="whiteBtn" class="btnWhite">しろ</button>
+      </div>
+
+      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">ひとつ もどす</button>
+
+      <div class="grid2" style="margin-bottom:10px;">
+        <button id="flipHBtn" class="btnFlip">左右はんてん</button>
+        <button id="clearBtn" class="btnClear">ぜんぶけす</button>
+      </div>
+
+      <div class="dpad">
+        <div class="spacer">.</div>
+        <button id="shiftUpBtn" class="btnShift">↑</button>
+        <div class="spacer">.</div>
+
+        <button id="shiftLeftBtn" class="btnShift">←</button>
+        <div class="spacer">.</div>
+        <button id="shiftRightBtn" class="btnShift">→</button>
+
+        <div class="spacer">.</div>
+        <button id="shiftDownBtn" class="btnShift">↓</button>
+        <div class="spacer">.</div>
+      </div>
+
+      <div class="smallNote">※ サイズを変えると えは きえます<br>※ シフトは はみ出たぶんは けえます</div>
+    </div>
+
+    <!-- サンプルエリア -->
+    <div class="card">
+      <h2>サンプル</h2>
+
+      <select id="sampleSelect" style="margin-bottom:10px;">
+        <option value="">えらぶ</option>
+      </select>
+
+      <div class="grid2" style="margin-bottom:10px;">
+        <button id="applySampleBtn" class="btnSample">よびだす</button>
+        <button id="registerSampleBtn" class="btnRegister">とうろく</button>
+      </div>
+
+      <button id="deleteSampleBtn" class="btnDelete">サンプルを けす</button>
+    </div>
+
+  </div>
+</div>
+
+<script>
+/* ===== config.js 読み込みチェック ===== */
+if (typeof PC_URL === "undefined") {
+  alert("config.js が見つかりません。PC送信は無効です。");
+}
+
+/* ===== 基本設定 ===== */
+const VIEW = 600;
+let gridW = 20;
+let gridH = 20;
+const canvas = document.getElementById("viewCanvas");
+const ctx = canvas.getContext("2d");
+
+const gridWInput = document.getElementById("gridWInput");
+const gridHInput = document.getElementById("gridHInput");
+
+let tool = "black";
+let pixels = createEmptyPixels(gridW, gridH);
+let history = [];
+
+/* ===== ユーティリティ ===== */
+function createEmptyPixels(w, h){
+  return Array.from({length:h}, ()=>Array(w).fill(0));
+}
+
+/* ===== サンプル永続 ===== */
+const STORAGE_KEY = "dotWorkshopSamples_v2";   // 新フォーマット保存用
+const LEGACY_KEY  = "dotWorkshopSamples";      // 旧バージョンで使っていたキー名
+let samples = {};
+const sampleSelect = document.getElementById("sampleSelect");
+
+function loadSamples(){
+  const sNew = localStorage.getItem(STORAGE_KEY);   // v2
+  const sOld = localStorage.getItem(LEGACY_KEY);    // 旧
+
+  // まず新しいほう（v2）を優先。ただし空っぽなら旧キーも見る
+  let baseStr = null;
+  if (sNew && sNew !== "{}" && sNew !== "[]") {
+    baseStr = sNew;
+  } else if (sOld) {
+    baseStr = sOld;
+  }
+
+  if (!baseStr) return;
+
+  try {
+    const obj = JSON.parse(baseStr);
+    if (!obj || typeof obj !== "object") return;
+
+    samples = {};
+    for (const [name, val] of Object.entries(obj)){
+      if (val && typeof val === "object" && Array.isArray(val.data)) {
+        // v2形式: { w, h, data }
+        samples[name] = {
+          w: val.w || 20,
+          h: val.h || 20,
+          data: val.data
+        };
+      } else if (Array.isArray(val) && Array.isArray(val[0])) {
+        // v1形式: [[...], ...] （20x20固定とみなす）
+        samples[name] = {
+          w: 20,
+          h: 20,
+          data: val
+        };
+      }
+    }
+  } catch(e){
+    console.warn("sample load error", e);
+  }
+}
+
+function saveSamples(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(samples));
+}
+
+function refreshSampleList(){
+  sampleSelect.innerHTML = '<option value="">えらぶ</option>';
+  Object.keys(samples).sort((a,b)=>a.localeCompare(b,'ja')).forEach(name=>{
+    const o = document.createElement("option");
+    const s = samples[name];
+    o.value = name;
+    o.textContent = `${name} (${s.w}×${s.h})`;
+    sampleSelect.appendChild(o);
+  });
+}
+
+loadSamples();
+refreshSampleList();
+
+/* ===== 描画 ===== */
+function draw(){
+  const cellW = VIEW / gridW;
+  const cellH = VIEW / gridH;
+
+  ctx.fillStyle="#fff";
+  ctx.fillRect(0,0,VIEW,VIEW);
+
+  for(let y=0;y<gridH;y++){
+    for(let x=0;x<gridW;x++){
+      if(pixels[y][x]){
+        ctx.fillStyle="#000";
+        ctx.fillRect(x*cellW,y*cellH,cellW,cellH);
+      }
+    }
+  }
+
+  ctx.strokeStyle="#ccc";
+  for(let i=0;i<=gridW;i++){
+    ctx.beginPath();ctx.moveTo(i*cellW,0);ctx.lineTo(i*cellW,VIEW);ctx.stroke();
+  }
+  for(let j=0;j<=gridH;j++){
+    ctx.beginPath();ctx.moveTo(0,j*cellH);ctx.lineTo(VIEW,j*cellH);ctx.stroke();
+  }
+}
+draw();
+
+/* ===== Undo ===== */
+function saveHistory(){
+  history.push(pixels.map(r=>r.slice()));
+  if(history.length>30) history.shift();
+}
+document.getElementById("undoBtn").onclick=()=>{
+  if(history.length===0) return;
+  pixels = history.pop();
+  draw();
+};
+
+/* ===== キャンバスサイズ変更 ===== */
+function applyGridSize(newW, newH){
+  newW = Math.max(4, Math.min(32, newW|0));
+  newH = Math.max(4, Math.min(32, newH|0));
+  if (newW === gridW && newH === gridH) return;
+
+  if (!confirm("サイズを変えると いまの えは きえます。よろしいですか？")) {
+    gridWInput.value = gridW;
+    gridHInput.value = gridH;
+    return;
+  }
+
+  gridW = newW;
+  gridH = newH;
+  gridWInput.value = gridW;
+  gridHInput.value = gridH;
+
+  pixels = createEmptyPixels(gridW, gridH);
+  history = [];
+  draw();
+}
+gridWInput.addEventListener("change", ()=>{
+  applyGridSize(gridWInput.value, gridHInput.value);
+});
+gridHInput.addEventListener("change", ()=>{
+  applyGridSize(gridWInput.value, gridHInput.value);
+});
+
+/* ===== 描く（Pointer） ===== */
+let drawing=false;
+canvas.addEventListener("pointerdown",e=>{
+  drawing=true; saveHistory(); paint(e); e.preventDefault();
+});
+canvas.addEventListener("pointermove",e=>{
+  if(drawing) paint(e); e.preventDefault();
+});
+window.addEventListener("pointerup",()=>drawing=false);
+window.addEventListener("pointercancel",()=>drawing=false);
+
+function paint(e){
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/rect.width  * gridW);
+  const y = Math.floor((e.clientY-rect.top )/rect.height * gridH);
+  if(x<0||y<0||x>=gridW||y>=gridH)return;
+  pixels[y][x]=(tool==="black")?1:0;
+  draw();
+}
+
+/* ===== 色 ===== */
+const blackBtn=document.getElementById("blackBtn");
+const whiteBtn=document.getElementById("whiteBtn");
+blackBtn.onclick=()=>{tool="black";blackBtn.classList.add("btnActive");whiteBtn.classList.remove("btnActive");}
+whiteBtn.onclick=()=>{tool="white";whiteBtn.classList.add("btnActive");blackBtn.classList.remove("btnActive");}
+
+/* ===== クリア ===== */
+document.getElementById("clearBtn").onclick=()=>{
+  saveHistory();
+  pixels=createEmptyPixels(gridW, gridH);
+  draw();
+};
+
+/* ===== 水平反転・シフト ===== */
+function flipHorizontal(){
+  saveHistory();
+  const newPix=createEmptyPixels(gridW, gridH);
+  for(let y=0;y<gridH;y++){
+    for(let x=0;x<gridW;x++){
+      newPix[y][x]=pixels[y][gridW-1-x];
+    }
+  }
+  pixels=newPix;
+  draw();
+}
+function shift(dx,dy){
+  if(dx===0 && dy===0) return;
+  saveHistory();
+  const newPix=createEmptyPixels(gridW, gridH);
+  for(let y=0;y<gridH;y++){
+    for(let x=0;x<gridW;x++){
+      const sx=x+dx;
+      const sy=y+dy;
+      newPix[y][x]=(sx>=0 && sx<gridW && sy>=0 && sy<gridH) ? pixels[sy][sx] : 0;
+    }
+  }
+  pixels=newPix;
+  draw();
+}
+document.getElementById("flipHBtn").onclick      = ()=>flipHorizontal();
+document.getElementById("shiftUpBtn").onclick    = ()=>shift(0,  1);
+document.getElementById("shiftDownBtn").onclick  = ()=>shift(0, -1);
+document.getElementById("shiftLeftBtn").onclick  = ()=>shift(1,  0);
+document.getElementById("shiftRightBtn").onclick = ()=>shift(-1, 0);
+
+/* ===== サンプル呼び出し ===== */
+document.getElementById("applySampleBtn").onclick=()=>{
+  const name=sampleSelect.value;
+  if(!name||!samples[name]) return;
+
+  const s = samples[name];
+
+  // ★ スタックチャン・クレジット表示
+  const lower = name.toLowerCase();
+  if (
+    name.includes("スタックチャン") ||
+    name.includes("ｽﾀｯｸﾁｬﾝ") ||
+    lower.includes("stack-chan") ||
+    lower.includes("stackchan")
+  ){
+    alert(
+"ｽﾀｯｸﾁｬﾝはししかわ様が開発、公開している、 手乗りサイズのｽｰﾊﾟｰｶﾜｲｲコミュニケーションロボットです。\n" +
+"作品ページ：https://github.com/stack-chan/stack-chan"
+    );
+  }
+
+  gridW = s.w;
+  gridH = s.h;
+  gridWInput.value = gridW;
+  gridHInput.value = gridH;
+
+  saveHistory();
+  pixels = s.data.map(r=>r.slice());
+  draw();
+};
+
+/* ===== サンプル登録・削除 ===== */
+document.getElementById("registerSampleBtn").onclick=()=>{
+  const nameRaw=prompt("サンプルの なまえを いれてね");
+  if(!nameRaw) return;
+  const name=nameRaw.trim();
+  if(!name) return;
+  if(samples[name] && !confirm("もうあるよ。うわがきする？")) return;
+  samples[name] = {
+    w: gridW,
+    h: gridH,
+    data: pixels.map(r=>r.slice())
+  };
+  saveSamples(); refreshSampleList();
+  sampleSelect.value=name;
+};
+document.getElementById("deleteSampleBtn").onclick=()=>{
+  const name=sampleSelect.value;
+  if(!name) return;
+  if(!confirm("けしますか？")) return;
+  delete samples[name];
+  saveSamples(); refreshSampleList();
+  sampleSelect.value="";
+};
+
+/* ===== OLED bitmap（Adafruit_SSD1306 + drawBitmap）===== */
+function makeBitmap_Adafruit(){
+  const bytesPerRow = Math.ceil(gridW/8);
+  const out = [];
+  for(let y=0;y<gridH;y++){
+    for(let bx=0;bx<bytesPerRow;bx++){
+      let b=0;
+      for(let bit=0;bit<8;bit++){
+        const x=bx*8+bit;
+        if(x<gridW && pixels[y][x]){
+          b |= (1 << (7 - bit)); // MSBが左
+        }
+      }
+      out.push(b);
+    }
+  }
+  return out;
+}
+function buildCode(){
+  const name="PLAYER_BMP";
+  const arr=makeBitmap_Adafruit();
+  let out=`// Adafruit_SSD1306 + drawBitmap 用 (${gridW}x${gridH})\n`;
+  out+=`const uint8_t ${name}[] PROGMEM = {\n  `;
+  arr.forEach((b,i)=>{
+    out+="0x"+b.toString(16).padStart(2,"0");
+    if(i<arr.length-1) out+=", ";
+    if((i+1)%12===0) out+="\n  ";
+  });
+  out+=`\n};\n// display.drawBitmap(x, y, ${name}, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  return out;
+}
+
+/* ===== OLEDコード表示（ドット絵の下のエリアに出す） ===== */
+const codeArea=document.getElementById("codeArea");
+const codeText=document.getElementById("codeText");
+const codeHint=document.getElementById("codeHint");
+document.getElementById("codeBtn").onclick=()=>{
+  codeText.value=buildCode();
+  codeHint.textContent = `つかいかた例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  codeArea.style.display="block";
+  codeArea.scrollIntoView({behavior:"smooth", block:"nearest"});
+};
+
+/* ===== コピー ===== */
+document.getElementById("copyBtn").onclick=()=>{
+  codeText.focus();
+  codeText.select();
+  document.execCommand("copy");
+  alert("コピーしました！");
+};
+
+/* ===== PCへ送信（表示内容そのまま） ===== */
+document.getElementById("sendBtn").onclick=async ()=>{
+  if(typeof PC_URL==="undefined"){
+    alert("PC送信設定がありません（config.js）");
+    return;
+  }
+  const text=codeText.value;
+  if(!text){ alert("送るコードがありません"); return; }
+  try{
+    const res=await fetch(PC_URL,{
+      method:"POST",
+      headers:{ "Content-Type":"text/plain; charset=utf-8" },
+      body:text
+    });
+    alert(res.ok ? "PCに送信しました！" : "エラー："+res.status);
+  }catch(e){
+    alert("送信に失敗しました: "+e);
+  }
+};
+</script>
+
+</body>
+</html>
