@@ -1,9 +1,6 @@
 # BM-GamePod
 BM(ブレッドメイカー)シリーズの誰でも簡単に作れるシンプルなゲーム機です。
 
-
-# 自作小型ゲーム機プロジェクト
-
 ![GamePod](https://github.com/user-attachments/assets/0016645f-4d75-4854-8455-a5b343260546)
 
 
