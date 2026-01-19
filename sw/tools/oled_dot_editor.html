@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>ドット絵ワークショップ（可変サイズ対応）</title>
+<title>OLEDドット絵エディタ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{
@@ -77,6 +77,8 @@ body{
   box-sizing:border-box;
 }
 
+.rightPanel button,.card button{word-break:normal;}
+
 /* 2列グリッド */
 .grid2{
   display:grid;
@@ -120,6 +122,13 @@ body{
 .btnWhite{background:#fff;color:#000;border:2px solid #999;}
 .btnActive{outline:4px solid #4da3ff;}
 
+/* 黒/白・ペン/塗潰しの選択枠は内側に表示（見た目のサイズが変わらないように） */
+#blackBtn.btnActive, #whiteBtn.btnActive, #penModeBtn.btnActive, #fillModeBtn.btnActive{
+  outline: none;
+  box-shadow: inset 0 0 0 4px #4da3ff;
+}
+
+
 /* 操作 */
 .btnUndo{background:#cce7ff;}
 .btnClear{background:#ffb3b3;}
@@ -137,6 +146,12 @@ body{
 }
 .btnCopy{background:#d7ffd9;}
 .btnSend{background:#4da3ff;color:#fff;}
+
+/* モード */
+.btnMode{background:#eee;}
+.btnFill{background:#dff7ff;}
+.modeRow{display:flex; flex-direction:row; gap:10px;}
+.modeRow button{min-width:0; font-size:18px; padding:14px; white-space:nowrap; text-align:center; flex:1 1 0;}
 
 /* OLEDコードカード（キャンバスの下） */
 #oledCard{
@@ -215,11 +230,11 @@ body{
     <!-- ★ OLEDコード：ドット絵の「下」にまとめて配置 -->
     <div id="oledCard">
       <h2>OLEDコード</h2>
-      <button id="codeBtn" class="btnCode">コードをつくる</button>
+      <button id="codeBtn" class="btnCode">コードを作る</button>
 
       <div id="codeArea">
         <input id="varName" value="PLAYER_BMP" readonly>
-        <textarea id="codeText" readonly placeholder="ここにコードが出ます（上の「コードをつくる」で生成）"></textarea>
+        <textarea id="codeText" readonly placeholder="ここにコードが出ます（上の「コードを作る」で生成）"></textarea>
 
         <div style="margin-top:10px;">
           <button id="copyBtn" class="btnCopy">コピー</button>
@@ -230,35 +245,41 @@ body{
     </div>
   </div>
 
-  <!-- 右：ドット絵操作・サンプル -->
+  <!-- 右：そうさ・サンプル -->
   <div class="rightPanel">
 
     <!-- 操作エリア -->
     <div class="card">
-      <h2>ドット絵操作</h2>
+      <h2>そうさ</h2>
 
       <!-- サイズ指定（デフォルト 20×20） -->
       <div class="sizeRow">
         <label>
-          よこ（マス）
+          横（マス）
           <input id="gridWInput" type="number" min="4" max="32" value="20">
         </label>
         <label>
-          たて（マス）
+          縦（マス）
           <input id="gridHInput" type="number" min="4" max="32" value="20">
         </label>
       </div>
 
       <div class="grid2" style="margin-bottom:10px;">
-        <button id="blackBtn" class="btnBlack btnActive">くろ</button>
-        <button id="whiteBtn" class="btnWhite">しろ</button>
+        <button id="blackBtn" class="btnBlack btnActive">黒</button>
+        <button id="whiteBtn" class="btnWhite">白</button>
+      
       </div>
 
-      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">一つ戻す</button>
+      <div class="modeRow" style="margin-bottom:10px;">
+        <button id="penModeBtn" class="btnMode btnActive">ペン</button>
+        <button id="fillModeBtn" class="btnFill">塗り潰し</button>
+      </div>
+
+      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">一つ 戻す</button>
 
       <div class="grid2" style="margin-bottom:10px;">
         <button id="flipHBtn" class="btnFlip">左右反転</button>
-        <button id="clearBtn" class="btnClear">全て消す</button>
+        <button id="clearBtn" class="btnClear">全部消す</button>
       </div>
 
       <div class="dpad">
@@ -275,21 +296,21 @@ body{
         <div class="spacer">.</div>
       </div>
 
-      <div class="smallNote">※ サイズを変えると絵は消えます<br>※ シフトは はみ出た分は 消えます</div>
+      <div class="smallNote">※ サイズを変えると 絵は消えます<br>※ シフトは はみ出た分は消えます</div>
     </div>
 
     <!-- サンプルエリア -->
     <div class="card">
       <h2>ファイル選択</h2>
-      <!-- 上：読込み → 書出し -->
+      <!-- 上：よみこみ → かきだし（わかりやすく上から順） -->
       <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
         <div class="btnWrap">
-          <button id="importBtn" class="btnSample">リストを読込み</button>
-          <div class="btnHelp">以前保存した .json を読み込んで、登録リストを更新します（今のリストは上書き）</div>
+          <button id="importBtn" class="btnSample">リストを読込</button>
+          <div class="btnHelp">以前保存した .json を読込んで、登録リストを更新します（今のリストは上書き）</div>
         </div>
         <div class="btnWrap">
-          <button id="exportBtn" class="btnRegister">リストを書出し</button>
-          <div class="btnHelp">今の登録リストを .json に書き出します（場所と名前をえらべます ※主にChrome/Edge）</div>
+          <button id="exportBtn" class="btnRegister">リストを書出</button>
+          <div class="btnHelp">今の登録リストを .json に書出ます（場所と名前をえらべます ※主にChrome/Edge）</div>
         </div>
       </div>
       <input id="importFileFallback" type="file" accept="application/json" style="display:none;">
@@ -310,11 +331,11 @@ body{
       </div>
 
       <div class="btnWrap">
-        <button id="deleteSampleBtn" class="btnDelete">ドット絵をリストから削除</button>
-        <div class="btnHelp">登録リストから削除します（※ファイルに残すには「リストを書出し」で保存してね）</div>
+        <button id="deleteSampleBtn" class="btnDelete">サンプルをリストから削除</button>
+        <div class="btnHelp">登録リストから削除します（※ファイルに残すには「リストを書出」で保存してね）</div>
       </div>
 
-      <div class="smallNote" id="fileStatus" style="margin-top:10px;">※ このアプリは自動保存しません。変更したら「リストを書出し」で保存してね。</div>
+      <div class="smallNote" id="fileStatus" style="margin-top:10px;">※ このアプリは自動保存しません。変更したら「リストを書出」で保存してね。</div>
     </div>
 
   </div>
@@ -332,6 +353,7 @@ const gridWInput = document.getElementById("gridWInput");
 const gridHInput = document.getElementById("gridHInput");
 
 let tool = "black";
+let drawMode = "pen"; // "pen" or "fill"
 let pixels = createEmptyPixels(gridW, gridH);
 let history = [];
 
@@ -362,7 +384,7 @@ function refreshSampleList(){
   });
 }
 refreshSampleList();
-setFileStatus('※ このアプリは自動保存しません。変更したら「リストを書出し」で保存してね。');
+setFileStatus('※ このアプリは自動保存しません。変更したら「リストを書出」で保存してね。');
 
 function buildExportObject(){
   return {
@@ -398,7 +420,7 @@ function normalizeImported(obj){
   return out;
 }
 
-/* ===== 書出し前チェック（登録リストの表示＆未登録警告） ===== */
+/* ===== 書出前チェック（登録リストの表示＆未登録警告） ===== */
 function same2D(a, b, w, h){
   if(!Array.isArray(a) || !Array.isArray(b)) return false;
   if(a.length !== h || b.length !== h) return false;
@@ -439,7 +461,7 @@ function buildRegisteredListText(){
 function confirmBeforeExport(){
   const count = Object.keys(samples).length;
   if(count === 0){
-    alert("ドット絵が登録されていません。先にドット絵を登録して下さい");
+    alert("ドット絵が登録されていません。先にドット絵を登録してください。");
     return false;
   }
   const listText = buildRegisteredListText();
@@ -447,9 +469,9 @@ function confirmBeforeExport(){
   // 現在のドット絵が登録されているかチェック
   const currentInList = isCurrentRegistered();
   if(!currentInList){
-    return confirm("現在のドット絵が登録されていませんがよろしいですか？\n\n" + listText);
+    return confirm("現在のドット絵が登録されていませんが、よろしいですか？\n\n" + listText);
   }
-  return confirm("次の登録リストを書出します。よろしいですか？\n\n" + listText);
+  return confirm("次の登録リストを書出ます。よろしいですか？\n\n" + listText);
 }
 
 async function importSamplesViaPicker(){
@@ -469,12 +491,12 @@ async function importSamplesViaPicker(){
     samples = normalizeImported(obj);
     refreshSampleList();
     lastFileName = file.name || "(名称不明)";
-    setFileStatus(`読み込み：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+    setFileStatus(`読込：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
     sampleSelect.value = "";
     return true;
   } catch(e){
     if (e && e.name === 'AbortError') return true; // キャンセルは何もしない
-    alert("読み込みに失敗しました：" + (e && e.message ? e.message : e));
+    alert("読込に失敗しました：" + (e && e.message ? e.message : e));
     return true;
   }
 }
@@ -496,11 +518,11 @@ async function exportSamplesViaPicker(){
 
     const f = await handle.getFile();
     lastFileName = f.name || "dot_samples.json";
-    setFileStatus(`書き出し：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+    setFileStatus(`書出：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
     return true;
   } catch(e){
     if (e && e.name === 'AbortError') return true; // キャンセル
-    alert("書き出しに失敗しました：" + (e && e.message ? e.message : e));
+    alert("書出に失敗しました：" + (e && e.message ? e.message : e));
     return true;
   }
 }
@@ -516,10 +538,10 @@ function importSamplesFallback(inputEl){
       samples = normalizeImported(obj);
       refreshSampleList();
       lastFileName = f.name || "(名称不明)";
-      setFileStatus(`読み込み：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+      setFileStatus(`読込：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
       sampleSelect.value = "";
     } catch(e){
-      alert("読み込みに失敗しました：" + (e && e.message ? e.message : e));
+      alert("読込に失敗しました：" + (e && e.message ? e.message : e));
     } finally {
       inputEl.value = "";
     }
@@ -608,7 +630,7 @@ function applyGridSize(newW, newH){
   newH = Math.max(4, Math.min(32, newH|0));
   if (newW === gridW && newH === gridH) return;
 
-  if (!confirm("サイズを変えると いまの えは きえます。よろしいですか？")) {
+  if (!confirm("サイズを変えると現在の絵は消えます。よろしいですか？")) {
     gridWInput.value = gridW;
     gridHInput.value = gridH;
     return;
@@ -633,7 +655,25 @@ gridHInput.addEventListener("change", ()=>{
 /* ===== 描く（Pointer） ===== */
 let drawing=false;
 canvas.addEventListener("pointerdown",e=>{
-  drawing=true; saveHistory(); paint(e); e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const x = Math.floor((e.clientX-rect.left)/rect.width  * gridW);
+  const y = Math.floor((e.clientY-rect.top )/rect.height * gridH);
+  if(x<0||y<0||x>=gridW||y>=gridH){ e.preventDefault(); return; }
+
+  if(drawMode === "fill"){
+    saveHistory();
+    const newVal = (tool === "black") ? 1 : 0;
+    floodFill(x, y, newVal);
+    draw();
+    drawing = false;
+    e.preventDefault();
+    return;
+  }
+
+  drawing=true;
+  saveHistory();
+  paint(e);
+  e.preventDefault();
 });
 canvas.addEventListener("pointermove",e=>{
   if(drawing) paint(e); e.preventDefault();
@@ -655,6 +695,40 @@ const blackBtn=document.getElementById("blackBtn");
 const whiteBtn=document.getElementById("whiteBtn");
 blackBtn.onclick=()=>{tool="black";blackBtn.classList.add("btnActive");whiteBtn.classList.remove("btnActive");}
 whiteBtn.onclick=()=>{tool="white";whiteBtn.classList.add("btnActive");blackBtn.classList.remove("btnActive");}
+
+
+/* ===== 描画モード（ペン / 塗りつぶし） ===== */
+const penModeBtn = document.getElementById("penModeBtn");
+const fillModeBtn = document.getElementById("fillModeBtn");
+
+function setDrawMode(m){
+  drawMode = m;
+  if (penModeBtn) penModeBtn.classList.toggle("btnActive", drawMode === "pen");
+  if (fillModeBtn) fillModeBtn.classList.toggle("btnActive", drawMode === "fill");
+}
+if (penModeBtn) penModeBtn.onclick = ()=>setDrawMode("pen");
+if (fillModeBtn) fillModeBtn.onclick = ()=>setDrawMode("fill");
+setDrawMode("pen");
+
+/* ===== 塗りつぶし（4近傍フラッドフィル） ===== */
+function floodFill(sx, sy, newVal){
+  const target = pixels[sy][sx] | 0;
+  if (target === (newVal|0)) return;
+
+  const stack = [[sx, sy]];
+  while (stack.length){
+    const [x, y] = stack.pop();
+    if (x < 0 || y < 0 || x >= gridW || y >= gridH) continue;
+    if ((pixels[y][x] | 0) !== target) continue;
+
+    pixels[y][x] = newVal|0;
+
+    stack.push([x+1, y]);
+    stack.push([x-1, y]);
+    stack.push([x, y+1]);
+    stack.push([x, y-1]);
+  }
+}
 
 /* ===== クリア ===== */
 document.getElementById("clearBtn").onclick=()=>{
@@ -728,27 +802,27 @@ document.getElementById("applySampleBtn").onclick=()=>{
 
 /* ===== サンプル登録・削除 ===== */
 document.getElementById("registerSampleBtn").onclick=()=>{
-  const nameRaw=prompt("サンプルの なまえを いれてね");
+  const nameRaw=prompt("イラスト名を入力してください");
   if(!nameRaw) return;
   const name=nameRaw.trim();
   if(!name) return;
-  if(samples[name] && !confirm("もうあるよ。うわがきする？")) return;
+  if(samples[name] && !confirm("既にあります。上書きしますか？")) return;
   samples[name] = {
     w: gridW,
     h: gridH,
     data: pixels.map(r=>r.slice())
   };
   refreshSampleList();
-  setFileStatus("※ 変更しました。必要なら『リストを書出し』で保存してね。");
+  setFileStatus("※ 変更しました。必要なら『リストを書出』で保存してね。");
   sampleSelect.value=name;
 };
 document.getElementById("deleteSampleBtn").onclick=()=>{
   const name=sampleSelect.value;
   if(!name) return;
-  if(!confirm("けしますか？")) return;
+  if(!confirm("削除しますか？")) return;
   delete samples[name];
   refreshSampleList();
-  setFileStatus("※ 変更しました。必要なら『リストを書出し』で保存してね。");
+  setFileStatus("※ 変更しました。必要なら『リストを書出』で保存してね。");
   sampleSelect.value="";
 };
 
@@ -790,7 +864,7 @@ const codeText=document.getElementById("codeText");
 const codeHint=document.getElementById("codeHint");
 document.getElementById("codeBtn").onclick=()=>{
   codeText.value=buildCode();
-  codeHint.textContent = `つかいかた例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  codeHint.textContent = `使用例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
   codeArea.style.display="block";
   codeArea.scrollIntoView({behavior:"smooth", block:"nearest"});
 };
@@ -808,6 +882,3 @@ document.getElementById("copyBtn").onclick=()=>{
 
 </body>
 </html>
-
-
-
