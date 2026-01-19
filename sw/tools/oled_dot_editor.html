@@ -10,8 +10,9 @@ body{
   margin:20px;
   user-select:none;
   display:flex;             /* 全体を中央寄せ */
+  flex-direction:column; /* タイトル→本体を縦に並べる */
   justify-content:center;   /* 横方向中央 */
-  align-items:flex-start;   /* 縦は上揃え */
+  align-items:center;   /* 横方向中央（列レイアウト） */
 }
 .topRow{
   display:flex;
@@ -127,7 +128,13 @@ body{
 .btnSample{background:#7ee28b;}
 .btnRegister{background:#b28cff;color:#fff;}
 .btnDelete{background:#ff9999;}
-.btnCode{background:#ffe76a;}
+.btnCode{
+  background:#ffe76a;
+  font-size:22px;
+  padding:18px;
+  border-radius:14px;
+  font-weight:700;
+}
 .btnCopy{background:#d7ffd9;}
 .btnSend{background:#4da3ff;color:#fff;}
 
@@ -142,7 +149,7 @@ body{
 }
 #codeArea{
   margin-top:8px;
-  display:none;
+  display:block;
   border:1px solid #ddd;
   border-radius:12px;
   padding:12px;
@@ -175,13 +182,31 @@ body{
   margin-top:8px;
   line-height:1.35;
 }
+
+/* サンプル：ボタン説明 */
+.btnWrap{display:flex; flex-direction:column; gap:4px;}
+.btnHelp{font-size:12px; color:#666; line-height:1.25; padding:0 4px;}
+.helpBox{font-size:12px; color:#555; background:#fff; border:1px dashed #ccc; border-radius:12px; padding:10px; line-height:1.35; margin:10px 0;}
+
+
+/* Title */
+.pageTitle{
+  width:100%;
+  max-width:960px;
+  margin: 0 auto 14px auto;
+  font-size: 22px;
+  font-weight: 800;
+  text-align: center;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: linear-gradient(90deg, #ffcc66, #ff99cc);
+  color:#333;
+  box-sizing:border-box;
+}
 </style>
 </head>
 <body>
-
-<!-- ★ PC送信設定を先に読み込む（config.js） -->
-<script src="config.js"></script>
-
+<div class="pageTitle">OLEDドット絵エディタ</div>
 <div class="topRow">
   <!-- 左：ドット絵＋OLEDコード -->
   <div class="leftColumn">
@@ -194,11 +219,10 @@ body{
 
       <div id="codeArea">
         <input id="varName" value="PLAYER_BMP" readonly>
-        <textarea id="codeText" readonly></textarea>
+        <textarea id="codeText" readonly placeholder="ここにコードが出ます（上の「コードをつくる」で生成）"></textarea>
 
-        <div class="grid2" style="margin-top:10px;">
+        <div style="margin-top:10px;">
           <button id="copyBtn" class="btnCopy">コピー</button>
-          <button id="sendBtn" class="btnSend">PCへ送信</button>
         </div>
 
         <div class="smallNote" id="codeHint"></div>
@@ -256,29 +280,47 @@ body{
 
     <!-- サンプルエリア -->
     <div class="card">
-      <h2>サンプル</h2>
+      <h2>ファイル選択</h2>
+      <!-- 上：よみこみ → かきだし（わかりやすく上から順） -->
+      <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
+        <div class="btnWrap">
+          <button id="importBtn" class="btnSample">リストを読込み</button>
+          <div class="btnHelp">以前保存した .json を読み込んで、登録リストを更新します（今のリストは上書き）</div>
+        </div>
+        <div class="btnWrap">
+          <button id="exportBtn" class="btnRegister">リストを書出し</button>
+          <div class="btnHelp">今の登録リストを .json に書き出します（場所と名前をえらべます ※主にChrome/Edge）</div>
+        </div>
+      </div>
+      <input id="importFileFallback" type="file" accept="application/json" style="display:none;">
 
       <select id="sampleSelect" style="margin-bottom:10px;">
-        <option value="">えらぶ</option>
+        <option value="">登録リスト</option>
       </select>
 
       <div class="grid2" style="margin-bottom:10px;">
-        <button id="applySampleBtn" class="btnSample">よびだす</button>
-        <button id="registerSampleBtn" class="btnRegister">とうろく</button>
+        <div class="btnWrap">
+          <button id="applySampleBtn" class="btnSample">選択イラストを表示</button>
+          <div class="btnHelp">登録リストで選んだイラストを、左のドット絵に表示します</div>
+        </div>
+        <div class="btnWrap">
+          <button id="registerSampleBtn" class="btnRegister">ドット絵をリストに登録</button>
+          <div class="btnHelp">今のドット絵を登録リストに追加します（同じ名前は上書き）</div>
+        </div>
       </div>
 
-      <button id="deleteSampleBtn" class="btnDelete">サンプルを けす</button>
+      <div class="btnWrap">
+        <button id="deleteSampleBtn" class="btnDelete">サンプルをリストから削除</button>
+        <div class="btnHelp">登録リストから削除します（※ファイルに残すには「リストを書出し」で保存してね）</div>
+      </div>
+
+      <div class="smallNote" id="fileStatus" style="margin-top:10px;">※ このアプリは自動保存しません。変更したら「リストを書出し」で保存してね。</div>
     </div>
 
   </div>
 </div>
 
 <script>
-/* ===== config.js 読み込みチェック ===== */
-if (typeof PC_URL === "undefined") {
-  alert("config.js が見つかりません。PC送信は無効です。");
-}
-
 /* ===== 基本設定 ===== */
 const VIEW = 600;
 let gridW = 20;
@@ -298,59 +340,19 @@ function createEmptyPixels(w, h){
   return Array.from({length:h}, ()=>Array(w).fill(0));
 }
 
-/* ===== サンプル永続 ===== */
-const STORAGE_KEY = "dotWorkshopSamples_v2";   // 新フォーマット保存用
-const LEGACY_KEY  = "dotWorkshopSamples";      // 旧バージョンで使っていたキー名
+/* ===== サンプル（ファイルでエクスポート/インポートのみ） ===== */
 let samples = {};
 const sampleSelect = document.getElementById("sampleSelect");
+const fileStatus = document.getElementById("fileStatus");
+let lastFileName = "(未選択)";
 
-function loadSamples(){
-  const sNew = localStorage.getItem(STORAGE_KEY);   // v2
-  const sOld = localStorage.getItem(LEGACY_KEY);    // 旧
-
-  // まず新しいほう（v2）を優先。ただし空っぽなら旧キーも見る
-  let baseStr = null;
-  if (sNew && sNew !== "{}" && sNew !== "[]") {
-    baseStr = sNew;
-  } else if (sOld) {
-    baseStr = sOld;
-  }
-
-  if (!baseStr) return;
-
-  try {
-    const obj = JSON.parse(baseStr);
-    if (!obj || typeof obj !== "object") return;
-
-    samples = {};
-    for (const [name, val] of Object.entries(obj)){
-      if (val && typeof val === "object" && Array.isArray(val.data)) {
-        // v2形式: { w, h, data }
-        samples[name] = {
-          w: val.w || 20,
-          h: val.h || 20,
-          data: val.data
-        };
-      } else if (Array.isArray(val) && Array.isArray(val[0])) {
-        // v1形式: [[...], ...] （20x20固定とみなす）
-        samples[name] = {
-          w: 20,
-          h: 20,
-          data: val
-        };
-      }
-    }
-  } catch(e){
-    console.warn("sample load error", e);
-  }
-}
-
-function saveSamples(){
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(samples));
+function setFileStatus(msg){
+  if (!fileStatus) return;
+  fileStatus.textContent = msg;
 }
 
 function refreshSampleList(){
-  sampleSelect.innerHTML = '<option value="">えらぶ</option>';
+  sampleSelect.innerHTML = '<option value="">登録リスト</option>';
   Object.keys(samples).sort((a,b)=>a.localeCompare(b,'ja')).forEach(name=>{
     const o = document.createElement("option");
     const s = samples[name];
@@ -359,9 +361,208 @@ function refreshSampleList(){
     sampleSelect.appendChild(o);
   });
 }
-
-loadSamples();
 refreshSampleList();
+setFileStatus('※ このアプリは自動保存しません。変更したら「リストを書出し」で保存してね。');
+
+function buildExportObject(){
+  return {
+    app: "oled_dot_editor",
+    schema: 2,
+    exportedAt: new Date().toISOString(),
+    samples: samples,
+  };
+}
+
+function normalizeImported(obj){
+  // 受け付ける形式：
+  // A) { app, schema, samples: { name: {w,h,data} } }
+  // B) { name: {w,h,data} }
+  // C) { name: [[...], ...] } (20x20固定とみなす)
+  const root = (obj && typeof obj === 'object') ? obj : {};
+  const bag = (root.samples && typeof root.samples === 'object') ? root.samples : root;
+
+  const out = {};
+  for (const [name, val] of Object.entries(bag)){
+    if (!name) continue;
+    if (val && typeof val === "object" && Array.isArray(val.data)) {
+      out[name] = {
+        w: Math.max(4, Math.min(32, (val.w||20)|0)),
+        h: Math.max(4, Math.min(32, (val.h||20)|0)),
+        data: val.data
+      };
+    } else if (Array.isArray(val) && Array.isArray(val[0])) {
+      // 旧: dataだけ
+      out[name] = { w: 20, h: 20, data: val };
+    }
+  }
+  return out;
+}
+
+/* ===== 書出し前チェック（登録リストの表示＆未登録警告） ===== */
+function same2D(a, b, w, h){
+  if(!Array.isArray(a) || !Array.isArray(b)) return false;
+  if(a.length !== h || b.length !== h) return false;
+  for(let y=0; y<h; y++){
+    const ar = a[y], br = b[y];
+    if(!Array.isArray(ar) || !Array.isArray(br)) return false;
+    if(ar.length !== w || br.length !== w) return false;
+    for(let x=0; x<w; x++){
+      if((ar[x]|0) !== (br[x]|0)) return false;
+    }
+  }
+  return true;
+}
+
+function isCurrentRegistered(){
+  for(const [name, s] of Object.entries(samples)){
+    if(!s || typeof s !== "object") continue;
+    if((s.w|0) !== (gridW|0) || (s.h|0) !== (gridH|0)) continue;
+    if(same2D(s.data, pixels, gridW, gridH)) return true;
+  }
+  return false;
+}
+
+function buildRegisteredListText(){
+  const names = Object.keys(samples).sort((a,b)=>a.localeCompare(b,'ja'));
+  let t = "登録されているドット絵一覧:\n";
+  for(const n of names){
+    const s = samples[n];
+    if(s && typeof s === "object"){
+      t += `- ${n} (${s.w}×${s.h})\n`;
+    } else {
+      t += `- ${n}\n`;
+    }
+  }
+  return t;
+}
+
+function confirmBeforeExport(){
+  const count = Object.keys(samples).length;
+  if(count === 0){
+    alert("ドット絵が登録されていません。先にドット絵を登録して下さい");
+    return false;
+  }
+  const listText = buildRegisteredListText();
+
+  // 現在のドット絵が登録されているかチェック
+  const currentInList = isCurrentRegistered();
+  if(!currentInList){
+    return confirm("現在のドット絵が登録されていませんがよろしいですか？\n\n" + listText);
+  }
+  return confirm("次の登録リストを書出します。よろしいですか？\n\n" + listText);
+}
+
+async function importSamplesViaPicker(){
+  if (!window.showOpenFilePicker) return false;
+  try {
+    const [handle] = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{
+        description: "JSON",
+        accept: {"application/json": [".json"]}
+      }]
+    });
+    const file = await handle.getFile();
+    const text = await file.text();
+    const obj = JSON.parse(text);
+
+    samples = normalizeImported(obj);
+    refreshSampleList();
+    lastFileName = file.name || "(名称不明)";
+    setFileStatus(`読み込み：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+    sampleSelect.value = "";
+    return true;
+  } catch(e){
+    if (e && e.name === 'AbortError') return true; // キャンセルは何もしない
+    alert("読み込みに失敗しました：" + (e && e.message ? e.message : e));
+    return true;
+  }
+}
+
+async function exportSamplesViaPicker(){
+  if (!window.showSaveFilePicker) return false;
+  try {
+    const handle = await window.showSaveFilePicker({
+      suggestedName: lastFileName !== "(未選択)" ? lastFileName : "dot_samples.json",
+      types: [{
+        description: "JSON",
+        accept: {"application/json": [".json"]}
+      }]
+    });
+
+    const writable = await handle.createWritable();
+    await writable.write(JSON.stringify(buildExportObject(), null, 2));
+    await writable.close();
+
+    const f = await handle.getFile();
+    lastFileName = f.name || "dot_samples.json";
+    setFileStatus(`書き出し：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+    return true;
+  } catch(e){
+    if (e && e.name === 'AbortError') return true; // キャンセル
+    alert("書き出しに失敗しました：" + (e && e.message ? e.message : e));
+    return true;
+  }
+}
+
+// フォールバック：File Picker非対応ブラウザ用
+function importSamplesFallback(inputEl){
+  const f = inputEl.files && inputEl.files[0];
+  if (!f) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const obj = JSON.parse(reader.result);
+      samples = normalizeImported(obj);
+      refreshSampleList();
+      lastFileName = f.name || "(名称不明)";
+      setFileStatus(`読み込み：${lastFileName}（サンプル数 ${Object.keys(samples).length}）`);
+      sampleSelect.value = "";
+    } catch(e){
+      alert("読み込みに失敗しました：" + (e && e.message ? e.message : e));
+    } finally {
+      inputEl.value = "";
+    }
+  };
+  reader.readAsText(f);
+}
+
+function exportSamplesFallback(){
+  const blob = new Blob([JSON.stringify(buildExportObject(), null, 2)], {type: 'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = lastFileName !== "(未選択)" ? lastFileName : 'dot_samples.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  setFileStatus('※ このブラウザでは保存場所の選択ができないため、ダウンロードとして保存しました。');
+}
+
+// UI
+const importBtn = document.getElementById('importBtn');
+const exportBtn = document.getElementById('exportBtn');
+const importFileFallback = document.getElementById('importFileFallback');
+
+if (importBtn) {
+  importBtn.onclick = async ()=>{
+    const ok = await importSamplesViaPicker();
+    if (!ok) {
+      // フォールバック
+      importFileFallback.click();
+    }
+  };
+}
+if (exportBtn) {
+  exportBtn.onclick = async ()=>{
+    if(!confirmBeforeExport()) return;
+    const ok = await exportSamplesViaPicker();
+    if (!ok) {
+      exportSamplesFallback();
+    }
+  };
+}
+if (importFileFallback) {
+  importFileFallback.addEventListener('change', ()=>importSamplesFallback(importFileFallback));
+}
 
 /* ===== 描画 ===== */
 function draw(){
@@ -537,7 +738,8 @@ document.getElementById("registerSampleBtn").onclick=()=>{
     h: gridH,
     data: pixels.map(r=>r.slice())
   };
-  saveSamples(); refreshSampleList();
+  refreshSampleList();
+  setFileStatus("※ 変更しました。必要なら『リストを書出し』で保存してね。");
   sampleSelect.value=name;
 };
 document.getElementById("deleteSampleBtn").onclick=()=>{
@@ -545,7 +747,8 @@ document.getElementById("deleteSampleBtn").onclick=()=>{
   if(!name) return;
   if(!confirm("けしますか？")) return;
   delete samples[name];
-  saveSamples(); refreshSampleList();
+  refreshSampleList();
+  setFileStatus("※ 変更しました。必要なら『リストを書出し』で保存してね。");
   sampleSelect.value="";
 };
 
@@ -600,25 +803,7 @@ document.getElementById("copyBtn").onclick=()=>{
   alert("コピーしました！");
 };
 
-/* ===== PCへ送信（表示内容そのまま） ===== */
-document.getElementById("sendBtn").onclick=async ()=>{
-  if(typeof PC_URL==="undefined"){
-    alert("PC送信設定がありません（config.js）");
-    return;
-  }
-  const text=codeText.value;
-  if(!text){ alert("送るコードがありません"); return; }
-  try{
-    const res=await fetch(PC_URL,{
-      method:"POST",
-      headers:{ "Content-Type":"text/plain; charset=utf-8" },
-      body:text
-    });
-    alert(res.ok ? "PCに送信しました！" : "エラー："+res.status);
-  }catch(e){
-    alert("送信に失敗しました: "+e);
-  }
-};
+
 </script>
 
 </body>
