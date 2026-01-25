@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>OLEDドット絵エディタ</title>
+<title>ドット絵ワークショップ（可変サイズ対応）</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{
@@ -218,6 +218,52 @@ body{
   color:#333;
   box-sizing:border-box;
 }
+
+/* OLEDコード上段：コード作成 + 背景色（出力のみ） */
+.codeTopRow{
+  display:flex;
+  gap:14px;
+  align-items:flex-start;
+  flex-wrap:wrap;
+}
+.codeTopRow .btnCode{
+  width:auto;
+  flex: 0 0 auto;
+  white-space:nowrap;
+}
+.outBgBox{
+  flex: 1 1 260px;
+  background:#fff;
+  border:1px solid #e5e5e5;
+  border-radius:14px;
+  padding:10px 12px;
+}
+.outBgTitle{
+  font-size:14px;
+  font-weight:800;
+  margin-bottom:6px;
+}
+.outBgRow{
+  display:flex;
+  gap:14px;
+  align-items:center;
+  flex-wrap:wrap;
+}
+.outBgOpt{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  font-size:16px;
+  line-height:1.2;
+  white-space:nowrap;
+}
+.outBgNote{
+  font-size:12px;
+  color:#666;
+  line-height:1.35;
+  margin-top:6px;
+}
+
 </style>
 </head>
 <body>
@@ -230,7 +276,19 @@ body{
     <!-- ★ OLEDコード：ドット絵の「下」にまとめて配置 -->
     <div id="oledCard">
       <h2>OLEDコード</h2>
-      <button id="codeBtn" class="btnCode">コードを作る</button>
+      
+      <div class="codeTopRow">
+        <button id="codeBtn" class="btnCode">コードを作る</button>
+
+        <div class="outBgBox">
+          <div class="outBgTitle">背景色</div>
+          <div class="outBgRow">
+            <label class="outBgOpt"><input type="radio" name="outBg" id="outBgWhite" value="white" checked> 白</label>
+            <label class="outBgOpt"><input type="radio" name="outBg" id="outBgBlack" value="black"> 黒</label>
+          </div>
+          <div class="outBgNote">※ ブラウザ表示は変えず、出力するコードだけ背景色に合わせて反転します（黒を選ぶと出力のみ反転）</div>
+        </div>
+      </div>
 
       <div id="codeArea">
         <input id="varName" value="PLAYER_BMP" readonly>
@@ -250,7 +308,7 @@ body{
 
     <!-- 操作エリア -->
     <div class="card">
-      <h2>ドット絵操作</h2>
+      <h2>そうさ</h2>
 
       <!-- サイズ指定（デフォルト 20×20） -->
       <div class="sizeRow">
@@ -275,11 +333,11 @@ body{
         <button id="fillModeBtn" class="btnFill">塗り潰し</button>
       </div>
 
-      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">一つ 戻す</button>
+      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">ひとつ もどす</button>
 
       <div class="grid2" style="margin-bottom:10px;">
-        <button id="flipHBtn" class="btnFlip">左右反転</button>
-        <button id="clearBtn" class="btnClear">全部消す</button>
+        <button id="flipHBtn" class="btnFlip">左右はんてん</button>
+        <button id="clearBtn" class="btnClear">ぜんぶけす</button>
       </div>
 
       <div class="dpad">
@@ -296,7 +354,7 @@ body{
         <div class="spacer">.</div>
       </div>
 
-      <div class="smallNote">※ サイズを変えると 絵は消えます<br>※ シフトは はみ出た分は消えます</div>
+      <div class="smallNote">※ サイズを変えると えは きえます<br>※ シフトは はみ出たぶんは けえます</div>
     </div>
 
     <!-- サンプルエリア -->
@@ -325,7 +383,7 @@ body{
           <div class="btnHelp">登録リストで選んだイラストを、左のドット絵に表示します</div>
         </div>
         <div class="btnWrap">
-          <button id="registerSampleBtn" class="btnRegister">ドット絵リストに登録</button>
+          <button id="registerSampleBtn" class="btnRegister">ドット絵をリストに登録</button>
           <div class="btnHelp">今のドット絵を登録リストに追加します（同じ名前は上書き）</div>
         </div>
       </div>
@@ -353,6 +411,7 @@ const gridWInput = document.getElementById("gridWInput");
 const gridHInput = document.getElementById("gridHInput");
 
 let tool = "black";
+let outputBg = "white"; // 出力用の背景色（white/black）
 let drawMode = "pen"; // "pen" or "fill"
 let pixels = createEmptyPixels(gridW, gridH);
 let history = [];
@@ -752,12 +811,18 @@ function flipHorizontal(){
 function shift(dx,dy){
   if(dx===0 && dy===0) return;
   saveHistory();
-  const newPix=createEmptyPixels(gridW, gridH);
+
+  // 背景が「黒（出力のみ）」の場合、シフトで新しくできた行/列は黒で埋める
+  const fillVal = (outputBg === "black") ? 1 : 0;
+  const newPix = Array.from({length:gridH}, ()=>Array(gridW).fill(fillVal));
+
   for(let y=0;y<gridH;y++){
     for(let x=0;x<gridW;x++){
       const sx=x+dx;
       const sy=y+dy;
-      newPix[y][x]=(sx>=0 && sx<gridW && sy>=0 && sy<gridH) ? pixels[sy][sx] : 0;
+      if(sx>=0 && sx<gridW && sy>=0 && sy<gridH){
+        newPix[y][x] = pixels[sy][sx];
+      }
     }
   }
   pixels=newPix;
@@ -827,8 +892,11 @@ document.getElementById("deleteSampleBtn").onclick=()=>{
 };
 
 /* ===== OLED bitmap（Adafruit_SSD1306 + drawBitmap）===== */
-function makeBitmap_Adafruit(){
+function makeBitmap_Adafruit(invert){
   const bytesPerRow = Math.ceil(gridW/8);
+  const usedBits = gridW % 8;
+  const lastMask = (usedBits === 0) ? 0xFF : ((0xFF << (8 - usedBits)) & 0xFF);
+
   const out = [];
   for(let y=0;y<gridH;y++){
     for(let bx=0;bx<bytesPerRow;bx++){
@@ -839,6 +907,10 @@ function makeBitmap_Adafruit(){
           b |= (1 << (7 - bit)); // MSBが左
         }
       }
+      if(invert){
+        const mask = (bx === bytesPerRow - 1) ? lastMask : 0xFF;
+        b = (~b) & mask; // 使わないビットは常に0のまま
+      }
       out.push(b);
     }
   }
@@ -846,8 +918,10 @@ function makeBitmap_Adafruit(){
 }
 function buildCode(){
   const name="PLAYER_BMP";
-  const arr=makeBitmap_Adafruit();
-  let out=`// Adafruit_SSD1306 + drawBitmap 用 (${gridW}x${gridH})\n`;
+  const invertOutput = (outputBg === "black");
+  const arr=makeBitmap_Adafruit(invertOutput);
+  let out=`// Adafruit_SSD1306 + drawBitmap 用 (${gridW}x${gridH})${invertOutput ? "（白黒反転: 出力のみ）" : ""}
+`;
   out+=`const uint8_t ${name}[] PROGMEM = {\n  `;
   arr.forEach((b,i)=>{
     out+="0x"+b.toString(16).padStart(2,"0");
@@ -861,6 +935,19 @@ function buildCode(){
 /* ===== OLEDコード表示（ドット絵の下のエリアに出す） ===== */
 const codeArea=document.getElementById("codeArea");
 const codeText=document.getElementById("codeText");
+const outBgWhite = document.getElementById("outBgWhite");
+const outBgBlack = document.getElementById("outBgBlack");
+function updateOutputBg(){
+  outputBg = (outBgBlack && outBgBlack.checked) ? "black" : "white";
+  // すでにコードが表示されている場合は即更新
+  if (codeText && codeText.value && codeText.value.trim().length > 0) {
+    codeText.value = buildCode();
+    codeHint.textContent = `使用例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  }
+}
+if (outBgWhite) outBgWhite.addEventListener("change", updateOutputBg);
+if (outBgBlack) outBgBlack.addEventListener("change", updateOutputBg);
+updateOutputBg();
 const codeHint=document.getElementById("codeHint");
 document.getElementById("codeBtn").onclick=()=>{
   codeText.value=buildCode();
@@ -882,5 +969,3 @@ document.getElementById("copyBtn").onclick=()=>{
 
 </body>
 </html>
-
-
