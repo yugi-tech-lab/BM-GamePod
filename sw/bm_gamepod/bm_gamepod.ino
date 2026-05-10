@@ -14,8 +14,11 @@
 Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire);
 
 /* ボタン（内部プルアップ：押下=LOW） */
-const int PIN_BTN_JUMP  = 5;  // D5: タイトルで切替 / G1 前進 / G2 上昇
-const int PIN_BTN_DASH  = 6;  // D6: タイトルで開始 / G1 ジャンプ / G2 射撃
+const int PIN_BTN_JUMP  = 5;  // D5: タイトルで開始 / 射撃で上昇
+const int PIN_BTN_DASH  = 6;  // D6: タイトルで切替 / 射撃
+/* ジャンピングゲーム専用ボタン */
+const int PIN_JUMPING_LEFT  = A3; // A3: ジャンプで左移動
+const int PIN_JUMPING_RIGHT = 5;  // D5: ジャンプで右移動
 
 /* =========================
  *  プレイヤー（20×20ビットマップ）
@@ -26,12 +29,16 @@ const int PIN_BTN_DASH  = 6;  // D6: タイトルで開始 / G1 ジャンプ / G
   0x70,0x60,0x00,0x50,0xae,0x92,0xd0,0xaa,0x10,0x50,0xee,0x92,0xf0,0xde,0x10,0x70,
   0x1f,0xff,0x80,0x01,0x02,0x00,0x03,0x03,0x00,0x07,0x03,0x80
 */
-const uint8_t PROGMEM PLAYER_BMP[60] = {
-  0x1f,0xff,0x80,0x20,0x00,0x40,0x2a,0x8a,0xc0,0x20,0x00,0x40,0x28,0x00,0xc0,0x23,
-  0xcf,0x40,0x21,0x4a,0x40,0x20,0x84,0x40,0x2c,0x01,0xc0,0x2c,0x39,0xc0,0x60,0x00,
-  0x70,0x60,0x00,0x50,0xae,0x92,0xd0,0xaa,0x10,0x50,0xee,0x92,0xf0,0xde,0x10,0x70,
-  0x1f,0xff,0x80,0x01,0x02,0x00,0x03,0x03,0x00,0x07,0x03,0x80
-};
+
+  // ｽﾀｯｸﾁｬﾝ
+  //※ｽﾀｯｸﾁｬﾝはししかわ様が開発、公開している、 手乗りサイズのｽｰﾊﾟｰｶﾜｲｲコミュニケーションロボットです。 
+  const uint8_t PLAYER_BMP[] PROGMEM = {
+    0x3f, 0xfe, 0x00, 0x60, 0x01, 0xc0, 0xd0, 0x00, 0x20, 0x8f, 0xff, 0xf0, 
+    0x8a, 0x00, 0x10, 0x8a, 0xff, 0xd0, 0x8a, 0xff, 0xd0, 0x8a, 0xee, 0xd0, 
+    0x8a, 0xff, 0xd0, 0x8a, 0xf1, 0xd0, 0x8a, 0xff, 0xd0, 0x8a, 0xff, 0xd0, 
+    0x8a, 0x92, 0x50, 0x4a, 0xff, 0xd0, 0x2a, 0x00, 0x10, 0x1f, 0xff, 0xf0, 
+    0x01, 0x09, 0x00, 0x03, 0x08, 0x80, 0x06, 0x3c, 0x40, 0x07, 0xe7, 0xc0
+  };
 
 /* =========================
  *  ボス（40×40ビットマップ）
@@ -114,21 +121,18 @@ Beep SND_OK       = {1100, 60};
 Beep SND_CANCEL   = { 400,120};
 Beep SND_GAMEOVER = { 220,400};
 Beep SND_RESTART  = {1000,100};
-Beep SND_JUMP     = {1200, 80};
-Beep SND_AIRJUMP  = {1050, 60};
-Beep SND_STAGEUP  = {1500,100};
 
 /* =========================
  *  入力エッジ検出
  * ========================= */
-bool btnJumpPrev=false, btnDashPrev=false;
+bool btnJumpPrev=false, btnDashPrev=false, btnSpecialPrev=false;
+bool jumpingBtnLeftPrev=false, jumpingBtnRightPrev=false;
 static inline bool btnEdge(int pin, bool &prev){
   bool now=(digitalRead(pin)==LOW); bool edge=(now && !prev); prev=now; return edge;
 }
 
 /* ★★★ 入力ロック時刻 ★★★ */
-uint32_t g1_inputLockUntil = 0;  // G1
-uint32_t g2_inputLockUntil = 0;  // G2
+uint32_t shootingInputLockUntil = 0;
 
 /* =========================
  *  共通HUD（中央寄せ文字描画）
@@ -156,575 +160,302 @@ static inline void setInvert(bool on){
 /* =========================
  *  タイトル
  * ========================= */
-enum Mode : uint8_t { MODE_TITLE=0, MODE_GAME1, MODE_GAME2 };
+enum Mode : uint8_t { MODE_TITLE=0, MODE_SHOOTING, MODE_JUMPING };
 Mode mode = MODE_TITLE;
-uint8_t titleSel = 0; // 0=Game1, 1=Game2
-void resetTitle(){ mode = MODE_TITLE; titleSel = 0; }
+uint8_t titleSelection = 0;
+void resetTitle(){ display.setRotation(0); mode = MODE_TITLE; titleSelection = 0; }
 
 /* =========================
- *  G1: ジャンプ
+ *  シューティング
  * ========================= */
-const int   G1_GROUND_Y       = 52;
-const int   G1_PLAYER_X       = 20;
-const int   G1_PLAYER_W       = 20;
-const int   G1_PLAYER_H       = 20;
-const float G1_GRAVITY        = 0.65f;
-const float G1_JUMP_V         = -7.0f;
-const float G1_AIR_JUMP_V     = -4.0f;
-const uint16_t FRAME_MS       = 16;
-const float   G1_MOVE_SPEED   = 3.0f;
-const uint8_t STAGE_MAX       = 3;
-const uint8_t STAGE_DELTA_H   = 2;
+const int   SHOOTING_PLAYER_X = 12;
+const int   SHOOTING_PLAYER_W = 20;
+const int   SHOOTING_PLAYER_H = 20;
+const float SHOOTING_GRAVITY  = 0.7f;
+const float SHOOTING_THRUST   = -2.6f;
+const float SHOOTING_FRICTION = 0.98f;
 
-const int8_t   G1_BOSS_BOB_AMPL     = 4;
-const uint16_t G1_BOSS_BOB_STEP_MS  = 60;
+const uint8_t SHOOTING_MAX_BULLETS    = 5;  // RAM節約のため削減 (8→5)
+const uint8_t SHOOTING_MAX_ENEMIES    = 4;  // RAM節約のため削減 (6→4)
+const uint8_t SHOOTING_MAX_BOSS_SHOTS = 5;  // RAM節約のため削減 (8→5)
+const uint8_t SHOOTING_BULLET_W = 3, SHOOTING_BULLET_H = 3;
+const float   SHOOTING_BULLET_VX = 3.2f;
+const float   SHOOTING_ENEMY_BASE_SPEED = 1.2f;
+const float   SHOOTING_ENEMY_SCORE_SPEED_COEF = 0.8f;
 
-// ★ G1 ライフ
-const uint8_t G1_LIVES_MAX = 3;
-uint8_t g1_lives = G1_LIVES_MAX;
-bool    g1_hardOver = false;   // ライフ0の白黒反転中
+const uint16_t SHOOTING_SPAWN_BASE_INTERVAL_MS = 700;
+const int16_t  SHOOTING_SPAWN_DEC_PER_STAGE_MS = 50;
+const uint16_t SHOOTING_SPAWN_MIN_INTERVAL_MS  = 200;
+const float    SHOOTING_SPEEDMUL_PER_STAGE     = 0.15f;
 
-enum ObjType : uint8_t { BLOCK=0, PIT=1, PLATFORM=2, BOSS_G1=3 };
-struct Obj { ObjType type; uint16_t x; uint8_t w; uint8_t h; };
-const uint16_t MAP_LENGTH = 900;
-const Obj MAP[] PROGMEM = {
-  {BLOCK,120,12,18},{PIT,160,14,0},
-  {BLOCK,200,10,12},{PLATFORM,230,18,20},
-  {BLOCK,280,10,22},{BLOCK,320,20,10},
-  {PIT,360,26,0},
-  {PLATFORM,400,22,24},{BLOCK,440,12,14},
-  {BLOCK,480,10,12},{BLOCK,520,10,12},{BLOCK,560,10,12},
-  {BLOCK,620,16,22},{BLOCK,660,16,24},
-  {PIT,700,18,0},
-  {PLATFORM,728,16,26},
-  {BLOCK,760,12,20},{BLOCK,800,20,12},
-  {PIT,840,20,0},{PLATFORM,864,18,24},
-  {BOSS_G1,900,BOSS_W,BOSS_H},
-};
-const uint8_t MAP_LEN = sizeof(MAP)/sizeof(MAP[0]);
+const int      SHOOTING_EXTRA_ENEMY_PER_STAGE_PC = 15;
+const int      SHOOTING_EXTRA_ENEMY_MAX_PC       = 70;
 
-float   g1_playerY, g1_vy;
-bool    g1_onGround, g1_gameOver, g1_fastFall;
-bool    g1_airJumpAvailable;
-bool    g1_gameOverSoundPlayed1=false;
-uint8_t g1_currentStage;
-uint32_t g1_lastFrameMs, g1_startMs;
-uint32_t g1_score_dist = 0;
-float   g1_camX;
-int     g1_bgOffset;
+const uint16_t SHOOTING_BOSS_SPAWN_SCORE       = 2500;
+const uint8_t  SHOOTING_BOSS_HP                = 30;
+const float    SHOOTING_BOSS_VY                = 0.7f;
+const int16_t  SHOOTING_BOSS_ENTRY_OFFSET_X    = 25;
+const int16_t  SHOOTING_BOSS_HOLD_X            = 90;
+const int16_t  SHOOTING_BOSS_MIN_Y             = 1;
+const int16_t  SHOOTING_BOSS_MARGIN_BOTTOM     = 1;
+const uint8_t  SHOOTING_BOSS_SHOT_W = 6, SHOOTING_BOSS_SHOT_H = 6;
+const float    SHOOTING_BOSS_SHOT_VX_BASE       = 1.8f;
+const float    SHOOTING_BOSS_SHOT_VX_STAGE_COEF = 0.15f;
+const uint16_t SHOOTING_BOSS_SHOT_BASE_INTERVAL_MS = 1500;
+const int16_t  SHOOTING_BOSS_SHOT_DEC_PER_STAGE_MS = 200;
+const uint16_t SHOOTING_BOSS_SHOT_MIN_INTERVAL_MS  = 800;
 
-int8_t    g1_bossBob = 0;
-int8_t    g1_bossBobDir = 1;
-uint32_t  g1_bossBobLastMs = 0;
-
-// ステージ開始位置（camXは各ステージ0始まり）
-const float G1_STAGE_START_CAMX = 0.0f;
-
-/* ステージに応じた高さ補正 */
-inline uint8_t g1_stageAdjustedH(uint8_t baseH){
-  const uint8_t H_MAX = (G1_GROUND_Y - 6);
-  uint16_t h = baseH + (uint16_t)g1_currentStage * STAGE_DELTA_H;
-  if (h > H_MAX) h = H_MAX;
-  return (uint8_t)h;
-}
-inline int g1_screenX(uint16_t objX, float cam){
-  int16_t raw = (int16_t)objX - (int16_t)((uint16_t)cam);
-  int sx = raw; if (sx < -128) sx += MAP_LENGTH; return sx;
-}
-
-static inline int g1_floorY_at_screen_x(int sx, float cam){
-  bool pitHere = false;
-  int best = OLED_HEIGHT + 100;
-
-  for(uint8_t loop=0; loop<2; ++loop){
-    for(uint8_t i=0; i<MAP_LEN; ++i){
-      Obj o; memcpy_P(&o, &MAP[i], sizeof(Obj));
-      int ox = g1_screenX(o.x, cam);
-      int L = ox, R = ox + o.w - 1;
-      if (sx < L || sx > R) continue;
-
-      if (o.type == PIT){
-        pitHere = true;
-      } else if (o.type == PLATFORM){
-        uint8_t hAdj = g1_stageAdjustedH(o.h);
-        int topY = G1_GROUND_Y - hAdj;
-        if (topY < best) best = topY;
-      }
-    }
-  }
-  if (!pitHere){
-    if (G1_GROUND_Y < best) best = G1_GROUND_Y;
-  }
-  return best;
-}
-
-int g1_floorYAtPlayerX(){
-  const int inset = 2;
-  int leftX   = G1_PLAYER_X + inset;
-  int rightX  = G1_PLAYER_X + G1_PLAYER_W - 1 - inset;
-  int centerX = (leftX + rightX) / 2;
-
-  int fyL = g1_floorY_at_screen_x(leftX,   g1_camX);
-  int fyC = g1_floorY_at_screen_x(centerX, g1_camX);
-  int fyR = g1_floorY_at_screen_x(rightX,  g1_camX);
-
-  int floorY = fyL;
-  if (fyC < floorY) floorY = fyC;
-  if (fyR < floorY) floorY = fyR;
-
-  return floorY;
-}
-
-void g1_stageStartReset(){  // 同ステージ先頭から再開
-  g1_playerY = G1_GROUND_Y - G1_PLAYER_H;
-  g1_vy = 0; g1_onGround = true; g1_fastFall=false;
-  g1_airJumpAvailable = true;
-  g1_camX = G1_STAGE_START_CAMX;
-  g1_bgOffset = 0;
-  g1_gameOver = false; g1_gameOverSoundPlayed1=false;
-  g1_inputLockUntil = 0;
-  // ボスの上下ゆらぎ初期化
-  g1_bossBob = 0; g1_bossBobDir = 1; g1_bossBobLastMs = millis();
-}
-
-void g1_reset(){ // ステージ1開始
-  g1_currentStage = 0;
-  g1_score_dist   = 0;
-  g1_startMs = millis();
-  g1_stageStartReset();
-  g1_lives = G1_LIVES_MAX;
-  g1_hardOver = false;
-  setInvert(true); // 通常表示へ
-}
-
-void g1_advanceStageIfNeeded(){
-  if (g1_camX>=MAP_LENGTH){
-    g1_camX -= MAP_LENGTH;
-    if (g1_currentStage < STAGE_MAX){ g1_currentStage++; playBeep(SND_STAGEUP); }
-    // 新しいステージの先頭にカメラを置く（camXは既に[0,MAP_LENGTH)内）
-    // ステージの「スタート位置」はcamX=0扱いなので、ここでbgだけ揃える
-    g1_bgOffset = 0;
-  }
-}
-
-/* ========== G1 ライフ減処理（死亡時即時適用） ========== */
-void g1_commitDeath(){
-  if (!g1_gameOver){
-    g1_gameOver = true;
-    if (!g1_gameOverSoundPlayed1){ playBeep(SND_GAMEOVER); g1_gameOverSoundPlayed1=true; }
-    if (g1_lives > 0) g1_lives--;
-    if (g1_lives == 0){
-      g1_hardOver = true;
-      setInvert(false); // 反転表示
-    }else{
-      g1_hardOver = false;
-    }
-    g1_inputLockUntil = millis() + 500; btnJumpPrev = false; btnDashPrev = false;
-  }
-}
-
-void g1_update(){
-  if (g1_gameOver) return;
-
-  uint32_t now = millis();
-  if (now - g1_bossBobLastMs >= G1_BOSS_BOB_STEP_MS) {
-    g1_bossBobLastMs = now;
-    g1_bossBob += g1_bossBobDir;
-    if (g1_bossBob >=  G1_BOSS_BOB_AMPL)  { g1_bossBob =  G1_BOSS_BOB_AMPL;  g1_bossBobDir = -1; }
-    if (g1_bossBob <= -G1_BOSS_BOB_AMPL)  { g1_bossBob = -G1_BOSS_BOB_AMPL;  g1_bossBobDir =  1; }
-  }
-
-  bool moveHeld = (digitalRead(PIN_BTN_JUMP)==LOW);
-  bool jumpEdge = btnEdge(PIN_BTN_DASH, btnDashPrev);
-
-  if (jumpEdge){
-    if (g1_onGround){
-      g1_vy = G1_JUMP_V; g1_onGround=false; g1_fastFall=false;
-      g1_airJumpAvailable = true;
-      playBeep(SND_JUMP);
-    }else if (g1_airJumpAvailable){
-      g1_vy = G1_AIR_JUMP_V; g1_airJumpAvailable=false; g1_fastFall=false;
-      playBeep(SND_AIRJUMP);
-    }
-  }
-  g1_vy += G1_GRAVITY;
-  g1_playerY += g1_vy;
-
-  int floorY = g1_floorYAtPlayerX();
-  if (g1_vy>=0 && (int)(g1_playerY + G1_PLAYER_H) >= floorY){
-    g1_playerY = floorY - G1_PLAYER_H; g1_vy=0; g1_onGround=(floorY<OLED_HEIGHT);
-    if (g1_onGround){ g1_fastFall=false; g1_airJumpAvailable=true; }
-  }else g1_onGround=false;
-
-  float scroll = moveHeld ? G1_MOVE_SPEED : 0.0f;
-  g1_camX += scroll;
-  if (scroll > 0) g1_score_dist += (uint32_t)scroll;
-
-  g1_advanceStageIfNeeded();
-
-  // 落下（画面外）
-  if (g1_playerY > OLED_HEIGHT+10){
-    g1_commitDeath();
-    return;
-  }
-
-  // 当たり判定（ブロック/ボス）
-  const int G1_HITBOX_INSET = 2;
-  int px1 = G1_PLAYER_X + G1_HITBOX_INSET;
-  int py1 = (int)g1_playerY + G1_HITBOX_INSET;
-  int px2 = G1_PLAYER_X + G1_PLAYER_W - 1 - G1_HITBOX_INSET;
-  int py2 = (int)g1_playerY + G1_PLAYER_H - 1 - G1_HITBOX_INSET;
-
-  for(uint8_t loop=0; loop<2; loop++){
-    for(uint8_t i=0;i<MAP_LEN;i++){
-      Obj o; memcpy_P(&o,&MAP[i],sizeof(Obj));
-      if (o.type!=BLOCK && o.type!=BOSS_G1) continue;
-
-      int sx = g1_screenX(o.x, g1_camX);
-      if (sx>=OLED_WIDTH || sx+o.w<0) continue;
-
-      int ox1, oy1, ox2, oy2;
-      if (o.type==BLOCK){
-        uint8_t hAdj = g1_stageAdjustedH(o.h);
-        ox1 = sx; oy1 = G1_GROUND_Y - hAdj; ox2 = ox1 + o.w - 1; oy2 = G1_GROUND_Y - 1;
-      }else{
-        ox1 = sx;
-        oy1 = (G1_GROUND_Y - BOSS_H) - g1_bossBob;
-        ox2 = ox1 + BOSS_W - 1;
-        oy2 = (G1_GROUND_Y - 1) - g1_bossBob;
-      }
-
-      bool hit = !(px2<ox1 || ox2<px1 || py2<oy1 || oy2<py1);
-      if (hit){ g1_commitDeath(); return; }
-    }
-  }
-
-  g1_bgOffset += (int)scroll; if (g1_bgOffset>=16) g1_bgOffset=0;
-}
-
-void g1_draw(){
-  display.clearDisplay();
-  display.setTextWrap(false);
-  display.setTextColor(SSD1306_WHITE);
-
-  // ★ハードゲームオーバー（ライフ0・反転中）：文字のみ + ST/DS 表示
-  if (g1_gameOver && g1_hardOver){
-    display.setTextSize(1);
-    display.setCursor(0,0);
-    display.print(F("ST:")); display.print((int)g1_currentStage);
-    display.setCursor(64,0);
-    display.print(F("DS:")); display.print(g1_score_dist);
-    display.setTextSize(2); drawCenteredText(22, F("GAME OVER"), 2);
-    display.setTextSize(1); drawCenteredText(44, F("L:Stage1  R:Title"), 1);
-    display.display();
-    return;
-  }
-
-  // 背景・床
-  for(int x=0;x<OLED_WIDTH;x+=16){ int y=(x*13 + (g1_bgOffset*3))%48; display.drawPixel(x, y/2, SSD1306_WHITE); }
-  for(int x=0;x<OLED_WIDTH;x++){
-    bool pit=false;
-    for(uint8_t loop=0; loop<2 && !pit; loop++){
-      for(uint8_t i=0;i<MAP_LEN;i++){
-        Obj o; memcpy_P(&o,&MAP[i],sizeof(Obj));
-        if (o.type!=PIT) continue;
-        int sx=g1_screenX(o.x,g1_camX); if (x>=sx && x<=sx+o.w-1){ pit=true; break; }
-      }
-    }
-    if(!pit) display.drawPixel(x, G1_GROUND_Y, SSD1306_WHITE);
-  }
-
-  // 地形/ボス
-  for(uint8_t loop=0; loop<2; loop++){
-    for(uint8_t i=0;i<MAP_LEN;i++){
-      Obj o; memcpy_P(&o,&MAP[i],sizeof(Obj));
-      int sx=g1_screenX(o.x,g1_camX); if (sx>=OLED_WIDTH || sx+o.w<0) continue;
-
-      if (o.type==BLOCK){
-        uint8_t h=g1_stageAdjustedH(o.h); int oy=G1_GROUND_Y - h; display.fillRect(sx,oy,o.w,h,SSD1306_WHITE);
-      }else if (o.type==PLATFORM){
-        uint8_t h=g1_stageAdjustedH(o.h); int top=G1_GROUND_Y - h; int ph=4;
-        display.fillRect(sx,top,o.w,ph,SSD1306_WHITE);
-        for(int px=sx+2; px<sx+o.w; px+=6) for(int py=top+ph; py<=G1_GROUND_Y; py+=3) display.drawPixel(px,py,SSD1306_WHITE);
-      }else if (o.type==BOSS_G1){
-        int oy = (G1_GROUND_Y - BOSS_H) - g1_bossBob;
-        display.drawBitmap(sx, oy, BOSS_BMP, BOSS_W, BOSS_H, SSD1306_WHITE);
-      }
-    }
-  }
-
-  // プレイヤー
-  display.drawBitmap(G1_PLAYER_X, (int)g1_playerY, PLAYER_BMP, G1_PLAYER_W, G1_PLAYER_H, SSD1306_WHITE);
-
-  // HUD（1行目：DIST / STG / LF）
-  display.setTextSize(1);
-  display.setCursor(0,0);  display.print(F("DIST: ")); display.print(g1_score_dist);
-  display.setCursor(78,0); display.print(F("STG:"));  display.print((int)g1_currentStage);
-  display.setCursor(110,0); display.print(F("L")); display.print((int)g1_lives);
-
-  if (g1_gameOver){
-    display.setTextSize(2); drawCenteredText(22, F("Miss!"), 2);
-    display.setTextSize(1); drawCenteredText(44, F("L:Retry  R:Title"), 1);
-  }
-  display.display();
-}
-
-/* =========================
- *  G2: シューティング
- * ========================= */
-// プレイヤー
-const int   G2_PLAYER_X = 12;
-const int   G2_PLAYER_W = 20;
-const int   G2_PLAYER_H = 20;
-const float G2_GRAVITY  = 0.7f;
-const float G2_THRUST   = -2.6f;
-const float G2_FRICTION = 0.98f;
-
-// 敵・弾
-const uint8_t G2_MAX_BULLETS     = 8;
-const uint8_t G2_MAX_ENEMIES     = 6;
-const uint8_t G2_MAX_BOSS_SHOTS  = 8;
-const uint8_t G2_BULLET_W = 3, G2_BULLET_H = 3;
-const float   G2_BULLET_VX = 3.2f;
-const float   G2_ENEMY_BASE_SPEED = 1.6f;
-const float   G2_ENEMY_SCORE_SPEED_COEF = 0.8f;
-
-// ステージ係数
-const uint16_t G2_SPAWN_BASE_INTERVAL_MS   = 700;
-const int16_t  G2_SPAWN_DEC_PER_STAGE_MS   = 50;
-const uint16_t G2_SPAWN_MIN_INTERVAL_MS    = 200;
-const float    G2_SPEEDMUL_PER_STAGE       = 0.15f;
-
-// 敵追加スポーン確率（%）
-const int      G2_EXTRA_ENEMY_PER_STAGE_PC = 15;
-const int      G2_EXTRA_ENEMY_MAX_PC       = 70;
-
-// ボス関連
-const uint16_t G2_BOSS_SPAWN_SCORE      = 3000;
-const uint8_t  G2_BOSS_HP               = 30;
-const float    G2_BOSS_VY               = 0.7f;
-const int16_t  G2_BOSS_ENTRY_OFFSET_X   = 25;
-const int16_t  G2_BOSS_HOLD_X           = 90;
-const int16_t  G2_BOSS_MIN_Y            = 1;
-const int16_t  G2_BOSS_MARGIN_BOTTOM    = 1;
-// ボス弾
-const uint8_t  G2_BOSSSHOT_W = 6, G2_BOSSSHOT_H = 6;
-const float    G2_BOSSSHOT_VX_BASE      = 1.8f;
-const float    G2_BOSSSHOT_VX_STAGE_COEF= 0.15f;
-const uint16_t G2_BOSSSHOT_BASE_INTERVAL_MS = 1200;
-const int16_t  G2_BOSSSHOT_DEC_PER_STAGE_MS = 40;
-const uint16_t G2_BOSSSHOT_MIN_INTERVAL_MS  = 800;
-
-// ライフ
-const uint8_t G2_LIVES_MAX = 3;
-uint8_t g2_lives = G2_LIVES_MAX;
-// ハードゲームオーバー（ライフ0・反転中）
-bool g2_hardOver = false;
+const uint8_t SHOOTING_LIVES_MAX = 3;
+uint8_t shootingLives = SHOOTING_LIVES_MAX;
+bool shootingHardOver = false;
 
 Beep SND_SHOT     = {1300, 40};
 Beep SND_HIT      = { 900, 70};
 Beep SND_BOSS_HIT = {1000, 40};
 Beep SND_BOSS_DIE = {1600,120};
+Beep SND_SPECIAL  = {1800, 60};
+
+// 特殊攻撃チャージ段階（発射時刻からの経過で決まる）
+// 3s+: ビーム×0.7  5s+: ビーム×1.2  7s+: ビーム×1.2 × 2連射
+uint32_t shootingSpecialLastFiredMs = 0; // millis()で初期化される
+
+Beep SND_JUMPING_LEVELUP = {1800, 80};
 
 struct Bullet   { float x,y,vx; uint8_t w,h; bool alive; };
 struct Enemy    { float x,y; uint8_t w,h; bool alive; };
 struct Boss     { float x,y; float vy; uint8_t w,h; uint8_t hp; bool alive; bool entering; };
 struct BossShot { float x,y,vx; uint8_t w,h; bool alive; };
 
-float   g2_py=OLED_HEIGHT/2, g2_vy=0;
-Bullet  g2_bul[G2_MAX_BULLETS];
-Enemy   g2_en [G2_MAX_ENEMIES];
-Boss    g2_boss;
-BossShot g2_bshot[G2_MAX_BOSS_SHOTS];
-bool    g2_bossSpawned=false;
-bool    g2_bossDefeated=false;
-bool    g2_clear=false;
+float   shootingPlayerY=OLED_HEIGHT/2, shootingVelocityY=0;
+Bullet  shootingBullets[SHOOTING_MAX_BULLETS];
+Enemy   shootingEnemies[SHOOTING_MAX_ENEMIES];
+Boss    shootingBoss;
+BossShot shootingBossShots[SHOOTING_MAX_BOSS_SHOTS];
+bool    shootingBossSpawned=false;
+bool    shootingBossDefeated=false;
+bool    shootingClear=false;
 
-uint32_t g2_lastSpawn=0;
-uint32_t g2_score=0;
-bool     g2_gameOver=false;
-bool     g2_gameOverSoundPlayed2=false;
+uint32_t shootingLastSpawn=0;
+uint32_t shootingScore=0;
+bool     shootingGameOver=false;
+bool     shootingGameOverSoundPlayed=false;
 
-// 進行管理
-uint8_t  g2_stage=1;
-uint16_t g2_spawnInterval=G2_SPAWN_BASE_INTERVAL_MS;
-float    g2_speedMul=1.0f;
-uint16_t g2_bossSpawnScore=G2_BOSS_SPAWN_SCORE;
-uint32_t g2_nextBossSpawnAt=G2_BOSS_SPAWN_SCORE;
-uint32_t g2_stageScoreBase = 0;
+uint8_t  shootingStage=1;
+uint16_t shootingSpawnInterval=SHOOTING_SPAWN_BASE_INTERVAL_MS;
+float    shootingSpeedMul=1.0f;
+uint16_t shootingBossSpawnScore=SHOOTING_BOSS_SPAWN_SCORE;
+uint32_t shootingNextBossSpawnAt=SHOOTING_BOSS_SPAWN_SCORE;
+uint32_t shootingStageScoreBase = 0;
 
-// ボス弾
-uint32_t g2_bossLastShotMs=0;
-uint16_t g2_bossShotInterval=G2_BOSSSHOT_BASE_INTERVAL_MS;
+uint32_t shootingBossLastShotMs=0;
+uint16_t shootingBossShotInterval=SHOOTING_BOSS_SHOT_BASE_INTERVAL_MS;
 
-static inline uint8_t g2_countAlive(){ uint8_t c=0; for(uint8_t i=0;i<G2_MAX_ENEMIES;i++) if (g2_en[i].alive) c++; return c; }
+static inline uint8_t countAliveEnemies(){ uint8_t c=0; for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++) if (shootingEnemies[i].alive) c++; return c; }
 
-void g2_applyStageParams(){
-  g2_speedMul = 1.0f + G2_SPEEDMUL_PER_STAGE * g2_stage;
+void applyShootingStageParams(){
+  shootingSpeedMul = 1.0f + SHOOTING_SPEEDMUL_PER_STAGE * shootingStage;
 
-  int16_t cand = (int16_t)G2_SPAWN_BASE_INTERVAL_MS - G2_SPAWN_DEC_PER_STAGE_MS * (int16_t)g2_stage;
-  g2_spawnInterval = (cand < (int16_t)G2_SPAWN_MIN_INTERVAL_MS) ? G2_SPAWN_MIN_INTERVAL_MS : (uint16_t)cand;
+  int16_t candidateSpawn = (int16_t)SHOOTING_SPAWN_BASE_INTERVAL_MS - SHOOTING_SPAWN_DEC_PER_STAGE_MS * (int16_t)shootingStage;
+  shootingSpawnInterval = (candidateSpawn < (int16_t)SHOOTING_SPAWN_MIN_INTERVAL_MS) ? SHOOTING_SPAWN_MIN_INTERVAL_MS : (uint16_t)candidateSpawn;
 
-  int16_t bCand = (int16_t)G2_BOSSSHOT_BASE_INTERVAL_MS - G2_BOSSSHOT_DEC_PER_STAGE_MS * (int16_t)g2_stage;
-  g2_bossShotInterval = (bCand < (int16_t)G2_BOSSSHOT_MIN_INTERVAL_MS) ? G2_BOSSSHOT_MIN_INTERVAL_MS : (uint16_t)bCand;
+  int16_t candidateBossShot = (int16_t)SHOOTING_BOSS_SHOT_BASE_INTERVAL_MS - SHOOTING_BOSS_SHOT_DEC_PER_STAGE_MS * (int16_t)shootingStage;
+  shootingBossShotInterval = (candidateBossShot < (int16_t)SHOOTING_BOSS_SHOT_MIN_INTERVAL_MS) ? SHOOTING_BOSS_SHOT_MIN_INTERVAL_MS : (uint16_t)candidateBossShot;
 }
 
-void g2_nextStage(){
-  g2_stage += 1;
-  g2_applyStageParams();
+void advanceShootingStage(){
+  shootingStage += 1;
+  applyShootingStageParams();
 
-  g2_clear = false;
-  g2_gameOver = false;
-  g2_gameOverSoundPlayed2 = false;
-  g2_hardOver = false;
+  shootingClear = false;
+  shootingGameOver = false;
+  shootingGameOverSoundPlayed = false;
+  shootingHardOver = false;
 
-  for(uint8_t i=0;i<G2_MAX_BULLETS;i++) g2_bul[i]={0,0,0,G2_BULLET_W,G2_BULLET_H,false};
-  for(uint8_t i=0;i<G2_MAX_ENEMIES;i++) g2_en[i]={0,0,0,0,false};
-  for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++) g2_bshot[i]={0,0,0,0,0,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++) shootingBullets[i]={0,0,0,SHOOTING_BULLET_W,SHOOTING_BULLET_H,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++) shootingEnemies[i]={0,0,0,0,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++) shootingBossShots[i]={0,0,0,0,0,false};
 
-  g2_nextBossSpawnAt = g2_score + g2_bossSpawnScore;
-  g2_stageScoreBase  = g2_score;
+  shootingNextBossSpawnAt = shootingScore + shootingBossSpawnScore;
+  shootingStageScoreBase  = shootingScore;
 
-  g2_boss = { (float)OLED_WIDTH + (float)G2_BOSS_ENTRY_OFFSET_X, 12.0f, G2_BOSS_VY, BOSS_W, BOSS_H, G2_BOSS_HP, false, false };
-  g2_bossSpawned=false;
-  g2_bossDefeated=false;
+  shootingBoss = { (float)OLED_WIDTH + (float)SHOOTING_BOSS_ENTRY_OFFSET_X, 12.0f, SHOOTING_BOSS_VY, BOSS_W, BOSS_H, SHOOTING_BOSS_HP, false, false };
+  shootingBossSpawned=false;
+  shootingBossDefeated=false;
 
-  g2_lastSpawn = millis();
-  g2_bossLastShotMs = millis();
-  g2_inputLockUntil = 0;
+  shootingLastSpawn = millis();
+  shootingBossLastShotMs = millis();
+  shootingInputLockUntil = 0;
+  shootingSpecialLastFiredMs = millis();
 
   setInvert(true);
   playBeep(SND_START);
 }
 
-void g2_reset(){
-  g2_py = (OLED_HEIGHT - G2_PLAYER_H)/2; g2_vy = 0; g2_score=0;
-  g2_gameOver=false; g2_gameOverSoundPlayed2=false; g2_clear=false; g2_hardOver=false;
+void resetShootingGame(){
+  shootingPlayerY = (OLED_HEIGHT - SHOOTING_PLAYER_H)/2; shootingVelocityY = 0; shootingScore=0;
+  shootingGameOver=false; shootingGameOverSoundPlayed=false; shootingClear=false; shootingHardOver=false;
 
-  for(uint8_t i=0;i<G2_MAX_BULLETS;i++) g2_bul[i]={0,0,0,G2_BULLET_W,G2_BULLET_H,false};
-  for(uint8_t i=0;i<G2_MAX_ENEMIES;i++) g2_en[i]={0,0,0,0,false};
-  for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++) g2_bshot[i]={0,0,0,0,0,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++) shootingBullets[i]={0,0,0,SHOOTING_BULLET_W,SHOOTING_BULLET_H,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++) shootingEnemies[i]={0,0,0,0,false};
+  for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++) shootingBossShots[i]={0,0,0,0,0,false};
 
-  g2_stage = 1;
-  g2_applyStageParams();
+  shootingStage = 1;
+  applyShootingStageParams();
 
-  g2_nextBossSpawnAt = g2_bossSpawnScore;
-  g2_stageScoreBase  = 0;
+  shootingNextBossSpawnAt = shootingBossSpawnScore;
+  shootingStageScoreBase  = 0;
 
-  g2_boss = { (float)OLED_WIDTH + (float)G2_BOSS_ENTRY_OFFSET_X, 12.0f, G2_BOSS_VY, BOSS_W, BOSS_H, G2_BOSS_HP, false, false };
-  g2_bossSpawned=false; g2_bossDefeated=false;
+  shootingBoss = { (float)OLED_WIDTH + (float)SHOOTING_BOSS_ENTRY_OFFSET_X, 12.0f, SHOOTING_BOSS_VY, BOSS_W, BOSS_H, SHOOTING_BOSS_HP, false, false };
+  shootingBossSpawned=false; shootingBossDefeated=false;
 
-  g2_lastSpawn = millis();
-  g2_bossLastShotMs = millis();
+  shootingLastSpawn = millis();
+  shootingBossLastShotMs = millis();
 
-  g2_inputLockUntil = 0;
+  shootingInputLockUntil = 0;
+  shootingSpecialLastFiredMs = millis();
 
-  g2_lives = G2_LIVES_MAX;   // ライフ全回復
-  setInvert(true);           // 反転解除
+  shootingLives = SHOOTING_LIVES_MAX;
+  setInvert(true);
 }
 
-/* ========== G2 ライフ減処理（死亡時即時適用） ========== */
-void g2_commitDeath(){
-  if (!g2_gameOver){
-    g2_gameOver = true;
-    if (!g2_gameOverSoundPlayed2){ playBeep(SND_GAMEOVER); g2_gameOverSoundPlayed2=true; }
-    if (g2_lives > 0) g2_lives--;
-    if (g2_lives == 0){
-      g2_hardOver = true;
-      setInvert(false); // 反転へ
+void commitShootingDeath(){
+  if (!shootingGameOver){
+    shootingGameOver = true;
+    if (!shootingGameOverSoundPlayed){ playBeep(SND_GAMEOVER); shootingGameOverSoundPlayed=true; }
+    if (shootingLives > 0) shootingLives--;
+    if (shootingLives == 0){
+      shootingHardOver = true;
+      setInvert(false);
     }else{
-      g2_hardOver = false; // 通常ゲームオーバー
+      shootingHardOver = false;
     }
-    g2_inputLockUntil = millis() + 500; btnJumpPrev = false; btnDashPrev = false;
+    shootingInputLockUntil = millis() + 500; btnJumpPrev = false; btnDashPrev = false;
   }
 }
 
-void g2_spawnEnemy(){
-  for(uint8_t i=0;i<G2_MAX_ENEMIES;i++){
-    if (!g2_en[i].alive){
-      g2_en[i].alive=true;
-      g2_en[i].x = OLED_WIDTH + random(0,25);
-      g2_en[i].y = 2 + random(0, OLED_HEIGHT - (2 + 8));
-      g2_en[i].w = 8 + random(0,6);
-      g2_en[i].h = 6 + random(0,8);
+void spawnEnemy(){
+  for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++){
+    if (!shootingEnemies[i].alive){
+      shootingEnemies[i].alive=true;
+      shootingEnemies[i].x = OLED_WIDTH + random(0,25);
+      shootingEnemies[i].y = 2 + random(0, OLED_HEIGHT - (2 + 8));
+      shootingEnemies[i].w = 8 + random(0,6);
+      shootingEnemies[i].h = 6 + random(0,8);
       return;
     }
   }
 }
-void g2_fire(){
-  for(uint8_t i=0;i<G2_MAX_BULLETS;i++){
-    if (!g2_bul[i].alive){
-      g2_bul[i].alive=true;
-      g2_bul[i].w = G2_BULLET_W; g2_bul[i].h = G2_BULLET_H;
-      g2_bul[i].x = G2_PLAYER_X + G2_PLAYER_W;
-      g2_bul[i].y = g2_py + (G2_PLAYER_H/2) - (g2_bul[i].h/2);
-      g2_bul[i].vx= G2_BULLET_VX;
+void firePlayerBullet(){
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++){
+    if (!shootingBullets[i].alive){
+      shootingBullets[i].alive=true;
+      shootingBullets[i].w = SHOOTING_BULLET_W; shootingBullets[i].h = SHOOTING_BULLET_H;
+      shootingBullets[i].x = SHOOTING_PLAYER_X + SHOOTING_PLAYER_W;
+      shootingBullets[i].y = shootingPlayerY + (SHOOTING_PLAYER_H/2) - (shootingBullets[i].h/2);
+      shootingBullets[i].vx= SHOOTING_BULLET_VX;
       playBeep(SND_SHOT);
       return;
     }
   }
 }
-void g2_bossFire(){
-  for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++){
-    if (!g2_bshot[i].alive){
-      g2_bshot[i].alive = true;
-      g2_bshot[i].w = G2_BOSSSHOT_W; g2_bshot[i].h = G2_BOSSSHOT_H;
+void fireSpecialBullets(){
+  uint32_t elapsed = millis() - shootingSpecialLastFiredMs;
+  if (elapsed < 2000UL) return;
+
+  const uint8_t BASE_H = 27;
+  uint8_t beamH;
+  uint8_t count;
+  if (elapsed >= 6000UL){
+    beamH = (uint8_t)(BASE_H * 1.2f + 0.5f); // ~32px
+    count = 2;
+  } else if (elapsed >= 4000UL){
+    beamH = (uint8_t)(BASE_H * 1.2f + 0.5f); // ~32px
+    count = 1;
+  } else {
+    beamH = (uint8_t)(BASE_H * 0.7f + 0.5f); // ~19px
+    count = 1;
+  }
+  if (beamH > OLED_HEIGHT) beamH = OLED_HEIGHT;
+
+  float fy = shootingPlayerY + SHOOTING_PLAYER_H / 2.0f - beamH / 2.0f;
+  if (fy < 0) fy = 0;
+  if (fy > OLED_HEIGHT - beamH) fy = OLED_HEIGHT - beamH;
+
+  // 空きスロットを事前収集し、count分揃っている場合のみ発射
+  uint8_t slots[2]; uint8_t nSlots = 0;
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS && nSlots<count;i++){
+    if (!shootingBullets[i].alive) slots[nSlots++] = i;
+  }
+  if (nSlots < count) return; // スロット不足なら発射しない
+
+  for(uint8_t f=0;f<count;f++){
+    uint8_t i = slots[f];
+    shootingBullets[i].alive = true;
+    shootingBullets[i].w = SHOOTING_BULLET_W;
+    shootingBullets[i].h = beamH;
+    shootingBullets[i].x = (float)(SHOOTING_PLAYER_X + SHOOTING_PLAYER_W) + f * 8.0f;
+    shootingBullets[i].y = fy;
+    shootingBullets[i].vx = SHOOTING_BULLET_VX;
+  }
+  playBeep(SND_SPECIAL);
+  shootingSpecialLastFiredMs = millis();
+}
+void fireBossBullet(){
+  for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++){
+    if (!shootingBossShots[i].alive){
+      shootingBossShots[i].alive = true;
+      shootingBossShots[i].w = SHOOTING_BOSS_SHOT_W; shootingBossShots[i].h = SHOOTING_BOSS_SHOT_H;
       int8_t dy = random(-10, 11);
-      g2_bshot[i].x = g2_boss.x - 2;
-      g2_bshot[i].y = g2_boss.y + (BOSS_H/2) + dy - (g2_bshot[i].h/2);
-      if (g2_bshot[i].y < 0) g2_bshot[i].y = 0;
-      if (g2_bshot[i].y > OLED_HEIGHT - g2_bshot[i].h) g2_bshot[i].y = OLED_HEIGHT - g2_bshot[i].h;
-      g2_bshot[i].vx = -(G2_BOSSSHOT_VX_BASE + G2_BOSSSHOT_VX_STAGE_COEF * g2_stage);
+      shootingBossShots[i].x = shootingBoss.x - 2;
+      shootingBossShots[i].y = shootingBoss.y + (BOSS_H/2) + dy - (shootingBossShots[i].h/2);
+      if (shootingBossShots[i].y < 0) shootingBossShots[i].y = 0;
+      if (shootingBossShots[i].y > OLED_HEIGHT - shootingBossShots[i].h) shootingBossShots[i].y = OLED_HEIGHT - shootingBossShots[i].h;
+      shootingBossShots[i].vx = -(SHOOTING_BOSS_SHOT_VX_BASE + SHOOTING_BOSS_SHOT_VX_STAGE_COEF * shootingStage);
       return;
     }
   }
 }
 
-void g2_update(){
+void updateShootingGame(){
   bool thrust = (digitalRead(PIN_BTN_JUMP)==LOW);
   bool fireEdge = btnEdge(PIN_BTN_DASH, btnDashPrev);
+  bool specialEdge = btnEdge(PIN_JUMPING_LEFT, btnSpecialPrev);
 
-  // クリア/ゲームオーバー中
-  if (g2_clear || g2_gameOver) {
-    if (millis() < g2_inputLockUntil) return;
+  if (shootingClear || shootingGameOver) {
+    if (millis() < shootingInputLockUntil) return;
 
-    if (g2_clear){
-      // クリア時：L=Next、R=Title
-      if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) { g2_nextStage(); }
+    if (shootingClear){
+      if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) { advanceShootingStage(); }
       if (fireEdge) { playBeep(SND_CANCEL); setInvert(true); resetTitle(); mode = MODE_TITLE; }
     }else{
-      // ゲームオーバー
-      if (g2_hardOver){
-        // ライフ0：反転・文字だけ
-        if (fireEdge) { // R: Title
+      if (shootingHardOver){
+        if (fireEdge) {
           playBeep(SND_CANCEL);
           setInvert(true);
           resetTitle(); mode = MODE_TITLE;
-        } else if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) { // L: Stage1
+        } else if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) {
           playBeep(SND_RESTART);
-          g2_reset();    // ステージ1/ライフ満タン/反転解除
+          resetShootingGame();
         }
       }else{
-        // ライフ残あり：L=Retry（同ステージ、ライフ消費済み）、R=Title
-        if (fireEdge) { // R: Title
+        if (fireEdge) {
           playBeep(SND_CANCEL);
           setInvert(true);
           resetTitle(); mode = MODE_TITLE;
         }
-        if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) { // L: Retry（ライフは減らさない）
+        if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)) {
           playBeep(SND_RESTART);
-          // 軽量リスタート（スコア/ステージ維持）
-          g2_py = (OLED_HEIGHT - G2_PLAYER_H)/2; g2_vy = 0;
-          for(uint8_t i=0;i<G2_MAX_BULLETS;i++) g2_bul[i]={0,0,0,G2_BULLET_W,G2_BULLET_H,false};
-          for(uint8_t i=0;i<G2_MAX_ENEMIES;i++) g2_en[i]={0,0,0,0,false};
-          for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++) g2_bshot[i]={0,0,0,0,0,false};
-          g2_bossSpawned=false; g2_bossDefeated=false;
-          g2_boss = { (float)OLED_WIDTH + (float)G2_BOSS_ENTRY_OFFSET_X, 12.0f, G2_BOSS_VY, BOSS_W, BOSS_H, G2_BOSS_HP, false, false };
-          g2_lastSpawn = millis();
-          g2_bossLastShotMs = millis();
-          g2_gameOver = false;
-          g2_gameOverSoundPlayed2 = false;
-          g2_inputLockUntil = 0;
+          shootingPlayerY = (OLED_HEIGHT - SHOOTING_PLAYER_H)/2; shootingVelocityY = 0;
+          for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++) shootingBullets[i]={0,0,0,SHOOTING_BULLET_W,SHOOTING_BULLET_H,false};
+          for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++) shootingEnemies[i]={0,0,0,0,false};
+          for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++) shootingBossShots[i]={0,0,0,0,0,false};
+          shootingBossSpawned=false; shootingBossDefeated=false;
+          shootingBoss = { (float)OLED_WIDTH + (float)SHOOTING_BOSS_ENTRY_OFFSET_X, 12.0f, SHOOTING_BOSS_VY, BOSS_W, BOSS_H, SHOOTING_BOSS_HP, false, false };
+          shootingLastSpawn = millis();
+          shootingBossLastShotMs = millis();
+          shootingGameOver = false;
+          shootingGameOverSoundPlayed = false;
+          shootingInputLockUntil = 0;
           setInvert(true);
         }
       }
@@ -732,209 +463,213 @@ void g2_update(){
     return;
   }
 
-  // 通常更新
-  if (thrust) g2_vy += G2_THRUST;
-  g2_vy += G2_GRAVITY;
-  g2_vy *= G2_FRICTION;
-  g2_py += g2_vy;
-  if (g2_py < 0){ g2_py=0; g2_vy=0; }
-  if (g2_py > OLED_HEIGHT - G2_PLAYER_H){ g2_py = OLED_HEIGHT - G2_PLAYER_H; g2_vy=0; }
+  if (thrust) shootingVelocityY += SHOOTING_THRUST;
+  shootingVelocityY += SHOOTING_GRAVITY;
+  shootingVelocityY *= SHOOTING_FRICTION;
+  shootingPlayerY += shootingVelocityY;
+  if (shootingPlayerY < 0){ shootingPlayerY=0; shootingVelocityY=0; }
+  if (shootingPlayerY > OLED_HEIGHT - SHOOTING_PLAYER_H){ shootingPlayerY = OLED_HEIGHT - SHOOTING_PLAYER_H; shootingVelocityY=0; }
 
-  if (fireEdge) g2_fire();
+  if (fireEdge) firePlayerBullet();
+  if (specialEdge) fireSpecialBullets();
 
-  // 弾
-  for(uint8_t i=0;i<G2_MAX_BULLETS;i++){
-    if (!g2_bul[i].alive) continue;
-    g2_bul[i].x += g2_bul[i].vx;
-    if (g2_bul[i].x > OLED_WIDTH) g2_bul[i].alive=false;
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++){
+    if (!shootingBullets[i].alive) continue;
+    shootingBullets[i].x += shootingBullets[i].vx;
+    if (shootingBullets[i].x > OLED_WIDTH) shootingBullets[i].alive=false;
   }
 
-  // ボス出現
-  if (!g2_bossSpawned && !g2_bossDefeated && g2_score >= g2_nextBossSpawnAt){
-    g2_bossSpawned = true;
-    g2_boss.alive = true;
-    g2_boss.entering = true;
-    g2_boss.x = OLED_WIDTH + G2_BOSS_ENTRY_OFFSET_X;
-    g2_boss.y = 12;
-    g2_boss.vy = G2_BOSS_VY;
-    g2_boss.hp = G2_BOSS_HP;
+  if (!shootingBossSpawned && !shootingBossDefeated && shootingScore >= shootingNextBossSpawnAt){
+    shootingBossSpawned = true;
+    shootingBoss.alive = true;
+    shootingBoss.entering = true;
+    shootingBoss.x = OLED_WIDTH + SHOOTING_BOSS_ENTRY_OFFSET_X;
+    shootingBoss.y = 12;
+    shootingBoss.vy = SHOOTING_BOSS_VY;
+    shootingBoss.hp = SHOOTING_BOSS_HP;
   }
 
-  // 敵スポーン（ボス中停止）
   uint32_t now = millis();
-  if (!g2_bossSpawned || !g2_boss.alive){
-    if (now - g2_lastSpawn >= g2_spawnInterval){
-      g2_lastSpawn = now;
-      if (g2_countAlive() < G2_MAX_ENEMIES){
-        g2_spawnEnemy();
-        int extraChance = G2_EXTRA_ENEMY_PER_STAGE_PC * (int)g2_stage;
-        if (extraChance > G2_EXTRA_ENEMY_MAX_PC) extraChance = G2_EXTRA_ENEMY_MAX_PC;
-        if (random(0,100) < extraChance && g2_countAlive() < G2_MAX_ENEMIES) g2_spawnEnemy();
+  if (!shootingBossSpawned || !shootingBoss.alive){
+    if (now - shootingLastSpawn >= shootingSpawnInterval){
+      shootingLastSpawn = now;
+      if (countAliveEnemies() < SHOOTING_MAX_ENEMIES){
+        spawnEnemy();
+        int extraChance = SHOOTING_EXTRA_ENEMY_PER_STAGE_PC * (int)shootingStage;
+        if (extraChance > SHOOTING_EXTRA_ENEMY_MAX_PC) extraChance = SHOOTING_EXTRA_ENEMY_MAX_PC;
+        if (random(0,100) < extraChance && countAliveEnemies() < SHOOTING_MAX_ENEMIES) spawnEnemy();
       }
     }
   }
 
-  // 敵更新＆当たり
-  for(uint8_t i=0;i<G2_MAX_ENEMIES;i++){
-    if (!g2_en[i].alive) continue;
+  for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++){
+    if (!shootingEnemies[i].alive) continue;
 
     float scorePhase = 0.0f;
-    if (g2_score > g2_stageScoreBase) {
-      scorePhase = (float)(g2_score - g2_stageScoreBase) / (float)g2_bossSpawnScore;
+    if (shootingScore > shootingStageScoreBase) {
+      scorePhase = (float)(shootingScore - shootingStageScoreBase) / (float)shootingBossSpawnScore;
       if (scorePhase > 1.0f) scorePhase = 1.0f;
     }
-    float vx = G2_ENEMY_BASE_SPEED * g2_speedMul + G2_ENEMY_SCORE_SPEED_COEF * scorePhase;
+    float vx = SHOOTING_ENEMY_BASE_SPEED * shootingSpeedMul + SHOOTING_ENEMY_SCORE_SPEED_COEF * scorePhase;
 
-    g2_en[i].x -= vx;
-    if (g2_en[i].x + g2_en[i].w < 0) g2_en[i].alive=false;
+    shootingEnemies[i].x -= vx;
+    if (shootingEnemies[i].x + shootingEnemies[i].w < 0) shootingEnemies[i].alive=false;
 
-    int px1=G2_PLAYER_X, py1=(int)g2_py;
-    int px2=px1+G2_PLAYER_W-1, py2=py1+G2_PLAYER_H-1;
-    int ex1=(int)g2_en[i].x, ey1=(int)g2_en[i].y;
-    int ex2=ex1+g2_en[i].w-1, ey2=ey1+g2_en[i].h-1;
+    int px1=SHOOTING_PLAYER_X, py1=(int)shootingPlayerY;
+    int px2=px1+SHOOTING_PLAYER_W-1, py2=py1+SHOOTING_PLAYER_H-1;
+    int ex1=(int)shootingEnemies[i].x, ey1=(int)shootingEnemies[i].y;
+    int ex2=ex1+shootingEnemies[i].w-1, ey2=ey1+shootingEnemies[i].h-1;
     bool hit = !(px2<ex1 || ex2<px1 || py2<ey1 || ey2<py1);
-    if (hit){ g2_commitDeath(); return; }
+    if (hit){ commitShootingDeath(); return; }
 
-    for(uint8_t b=0;b<G2_MAX_BULLETS;b++){
-      if (!g2_bul[b].alive) continue;
-      int bx1=(int)g2_bul[b].x, by1=(int)g2_bul[b].y;
-      int bx2=bx1 + g2_bul[b].w - 1, by2=by1 + g2_bul[b].h - 1;
+    for(uint8_t b=0;b<SHOOTING_MAX_BULLETS;b++){
+      if (!shootingBullets[b].alive) continue;
+      int bx1=(int)shootingBullets[b].x, by1=(int)shootingBullets[b].y;
+      int bx2=bx1 + shootingBullets[b].w - 1, by2=by1 + shootingBullets[b].h - 1;
       bool bHit = !(bx2<ex1 || ex2<bx1 || by2<ey1 || ey2<by1);
       if (bHit){
-        g2_bul[b].alive=false; g2_en[i].alive=false; g2_score += 100; playBeep(SND_HIT);
+        shootingBullets[b].alive=false; shootingEnemies[i].alive=false; shootingScore += 100; playBeep(SND_HIT);
         break;
       }
     }
   }
 
-  // ボス更新
-  if (g2_bossSpawned && g2_boss.alive){
-    if (g2_boss.entering){
-      g2_boss.x -= 1.2f;
-      if (g2_boss.x <= G2_BOSS_HOLD_X){ g2_boss.x = G2_BOSS_HOLD_X; g2_boss.entering = false; }
+  if (shootingBossSpawned && shootingBoss.alive){
+    if (shootingBoss.entering){
+      shootingBoss.x -= 1.2f;
+      if (shootingBoss.x <= SHOOTING_BOSS_HOLD_X){ shootingBoss.x = SHOOTING_BOSS_HOLD_X; shootingBoss.entering = false; }
     }else{
-      g2_boss.y += g2_boss.vy;
-      if (g2_boss.y < G2_BOSS_MIN_Y){ g2_boss.y = G2_BOSS_MIN_Y; g2_boss.vy = fabs(g2_boss.vy); }
-      if (g2_boss.y > (OLED_HEIGHT - g2_boss.h - G2_BOSS_MARGIN_BOTTOM)){ g2_boss.y = (OLED_HEIGHT - g2_boss.h - G2_BOSS_MARGIN_BOTTOM); g2_boss.vy = -fabs(g2_boss.vy); }
+      shootingBoss.y += shootingBoss.vy;
+      if (shootingBoss.y < SHOOTING_BOSS_MIN_Y){ shootingBoss.y = SHOOTING_BOSS_MIN_Y; shootingBoss.vy = fabs(shootingBoss.vy); }
+      if (shootingBoss.y > (OLED_HEIGHT - shootingBoss.h - SHOOTING_BOSS_MARGIN_BOTTOM)){ shootingBoss.y = (OLED_HEIGHT - shootingBoss.h - SHOOTING_BOSS_MARGIN_BOTTOM); shootingBoss.vy = -fabs(shootingBoss.vy); }
 
-      if (now - g2_bossLastShotMs >= g2_bossShotInterval){
-        g2_bossLastShotMs = now;
-        g2_bossFire();
-        if (g2_stage >= 3) g2_bossFire();
+      if (now - shootingBossLastShotMs >= shootingBossShotInterval){
+        shootingBossLastShotMs = now;
+        fireBossBullet();
+        if (shootingStage >= 3) fireBossBullet();
       }
     }
 
-    int px1=G2_PLAYER_X, py1=(int)g2_py;
-    int px2=px1+G2_PLAYER_W-1, py2=py1+G2_PLAYER_H-1;
-    int bx1=(int)g2_boss.x, by1=(int)g2_boss.y;
-    int bx2=bx1+g2_boss.w-1, by2=by1+g2_boss.h-1;
+    int px1=SHOOTING_PLAYER_X, py1=(int)shootingPlayerY;
+    int px2=px1+SHOOTING_PLAYER_W-1, py2=py1+SHOOTING_PLAYER_H-1;
+    int bx1=(int)shootingBoss.x, by1=(int)shootingBoss.y;
+    int bx2=bx1+shootingBoss.w-1, by2=by1+shootingBoss.h-1;
     bool bossHit = !(px2<bx1 || bx2<px1 || py2<by1 || by2<py1);
-    if (bossHit){ g2_commitDeath(); return; }
+    if (bossHit){ commitShootingDeath(); return; }
 
-    for(uint8_t b=0;b<G2_MAX_BULLETS;b++){
-      if (!g2_bul[b].alive) continue;
-      int ex1=(int)g2_bul[b].x, ey1=(int)g2_bul[b].y;
-      int ex2=ex1 + g2_bul[b].w - 1, ey2=ey1 + g2_bul[b].h - 1;
+    for(uint8_t b=0;b<SHOOTING_MAX_BULLETS;b++){
+      if (!shootingBullets[b].alive) continue;
+      int ex1=(int)shootingBullets[b].x, ey1=(int)shootingBullets[b].y;
+      int ex2=ex1 + shootingBullets[b].w - 1, ey2=ey1 + shootingBullets[b].h - 1;
       bool bHit = !(ex2<bx1 || bx2<ex1 || ey2<by1 || by2<ey1);
       if (bHit){
-        g2_bul[b].alive=false;
-        if (g2_boss.hp > 0) g2_boss.hp--;
-        g2_score += 120;
+        shootingBullets[b].alive=false;
+        if (shootingBoss.hp > 0) shootingBoss.hp--;
+        shootingScore += 120;
         playBeep(SND_BOSS_HIT);
-        if (g2_boss.hp == 0){
-          g2_boss.alive=false;
-          g2_bossDefeated=true;
+        if (shootingBoss.hp == 0){
+          shootingBoss.alive=false;
+          shootingBossDefeated=true;
           playBeep(SND_BOSS_DIE);
-          g2_score += 2000;
-          g2_clear = true;
-          g2_inputLockUntil = millis() + 500; btnJumpPrev = false; btnDashPrev = false;
+          shootingScore += 2000;
+          shootingClear = true;
+          shootingInputLockUntil = millis() + 500; btnJumpPrev = false; btnDashPrev = false;
         }
         break;
       }
     }
   }
 
-  // ボス弾
-  for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++){
-    if (!g2_bshot[i].alive) continue;
-    g2_bshot[i].x += g2_bshot[i].vx;
-    if (g2_bshot[i].x + g2_bshot[i].w < 0) { g2_bshot[i].alive=false; continue; }
+  for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++){
+    if (!shootingBossShots[i].alive) continue;
+    shootingBossShots[i].x += shootingBossShots[i].vx;
+    if (shootingBossShots[i].x + shootingBossShots[i].w < 0) { shootingBossShots[i].alive=false; continue; }
 
-    int px1=G2_PLAYER_X, py1=(int)g2_py;
-    int px2=px1+G2_PLAYER_W-1, py2=py1+G2_PLAYER_H-1;
-    int sx1=(int)g2_bshot[i].x, sy1=(int)g2_bshot[i].y;
-    int sx2=sx1+g2_bshot[i].w-1, sy2=sy1+g2_bshot[i].h-1;
+    int px1=SHOOTING_PLAYER_X, py1=(int)shootingPlayerY;
+    int px2=px1+SHOOTING_PLAYER_W-1, py2=py1+SHOOTING_PLAYER_H-1;
+    int sx1=(int)shootingBossShots[i].x, sy1=(int)shootingBossShots[i].y;
+    int sx2=sx1+shootingBossShots[i].w-1, sy2=sy1+shootingBossShots[i].h-1;
     bool shHit = !(px2<sx1 || sx2<px1 || py2<sy1 || sy2<py1);
-    if (shHit){ g2_commitDeath(); return; }
+    if (shHit){ commitShootingDeath(); return; }
   }
 }
 
-void g2_draw(){
+void drawShootingGame(){
   display.clearDisplay();
   display.setTextWrap(false);
   display.setTextColor(SSD1306_WHITE);
 
-  // ★ハードゲームオーバー（ライフ0・反転中）：文字のみ + ST/SC 表示
-  if (g2_gameOver && g2_hardOver){
+  if (shootingGameOver && shootingHardOver){
     display.setTextSize(1);
     display.setCursor(0,0);
-    display.print(F("ST:")); display.print((int)g2_stage);
+    display.print(F("ST:")); display.print((int)shootingStage);
     display.setCursor(64,0);
-    display.print(F("SC:")); display.print(g2_score);
+    display.print(F("SC:")); display.print(shootingScore);
     display.setTextSize(2); drawCenteredText(22, F("GAME OVER"), 2);
     display.setTextSize(1); drawCenteredText(44, F("L:Stage1  R:Title"), 1);
     display.display();
     return;
   }
 
-  // 自機
-  int x=G2_PLAYER_X, y=(int)g2_py;
-  display.drawBitmap(x, y, PLAYER_BMP, G2_PLAYER_W, G2_PLAYER_H, SSD1306_WHITE);
+  int x=SHOOTING_PLAYER_X, y=(int)shootingPlayerY;
+  display.drawBitmap(x, y, PLAYER_BMP, SHOOTING_PLAYER_W, SHOOTING_PLAYER_H, SSD1306_WHITE);
 
-  // 弾
-  for(uint8_t i=0;i<G2_MAX_BULLETS;i++){
-    if (g2_bul[i].alive) display.fillRect((int)g2_bul[i].x, (int)g2_bul[i].y, g2_bul[i].w, g2_bul[i].h, SSD1306_WHITE);
+  for(uint8_t i=0;i<SHOOTING_MAX_BULLETS;i++){
+    if (shootingBullets[i].alive) display.fillRect((int)shootingBullets[i].x, (int)shootingBullets[i].y, shootingBullets[i].w, shootingBullets[i].h, SSD1306_WHITE);
   }
 
-  // 敵
-  for(uint8_t i=0;i<G2_MAX_ENEMIES;i++){
-    if (!g2_en[i].alive) continue;
-    display.drawRect((int)g2_en[i].x, (int)g2_en[i].y, g2_en[i].w, g2_en[i].h, SSD1306_WHITE);
+  for(uint8_t i=0;i<SHOOTING_MAX_ENEMIES;i++){
+    if (!shootingEnemies[i].alive) continue;
+    display.drawRect((int)shootingEnemies[i].x, (int)shootingEnemies[i].y, shootingEnemies[i].w, shootingEnemies[i].h, SSD1306_WHITE);
   }
 
-  // ボス
-  if (g2_bossSpawned && g2_boss.alive){
-    display.drawBitmap((int)g2_boss.x, (int)g2_boss.y, BOSS_BMP, BOSS_W, BOSS_H, SSD1306_WHITE);
+  if (shootingBossSpawned && shootingBoss.alive){
+    display.drawBitmap((int)shootingBoss.x, (int)shootingBoss.y, BOSS_BMP, BOSS_W, BOSS_H, SSD1306_WHITE);
   }
 
-  // ボス弾
-  for(uint8_t i=0;i<G2_MAX_BOSS_SHOTS;i++){
-    if (g2_bshot[i].alive) display.fillRect((int)g2_bshot[i].x, (int)g2_bshot[i].y, g2_bshot[i].w, g2_bshot[i].h, SSD1306_WHITE);
+  for(uint8_t i=0;i<SHOOTING_MAX_BOSS_SHOTS;i++){
+    if (shootingBossShots[i].alive) display.fillRect((int)shootingBossShots[i].x, (int)shootingBossShots[i].y, shootingBossShots[i].w, shootingBossShots[i].h, SSD1306_WHITE);
   }
 
-  // 上部HUD（1行目：ST/SC/LF）
   display.setTextSize(1);
   display.setCursor(0,0);
-  display.print(F("ST:")); display.print((int)g2_stage);
+  display.print(F("ST:")); display.print((int)shootingStage);
   display.setCursor(44,0);
-  display.print(F("SC:")); display.print(g2_score);
+  display.print(F("SC:")); display.print(shootingScore);
   display.setCursor(96,0);
-  display.print(F("LF:")); display.print((int)g2_lives);
+  display.print(F("LF:")); display.print((int)shootingLives);
 
-  // ボス戦中は2行目HPバー
-  if (g2_bossSpawned && g2_boss.alive){
+  // 特殊攻撃チャージゲージ（右下）3段階
+  {
+    const int8_t gw=40, gh=3;
+    const int8_t gx=OLED_WIDTH-gw-1, gy=OLED_HEIGHT-gh-1;
+    uint32_t elapsed2 = millis() - shootingSpecialLastFiredMs;
+    if (elapsed2 > 6000UL) elapsed2 = 6000UL;
+    int fillW = (int)((gw - 2) * (float)elapsed2 / 6000.0f);
+    if (fillW < 0) fillW = 0;
+    display.drawRect(gx, gy, gw, gh, SSD1306_WHITE);
+    if (fillW > 0) display.fillRect(gx+1, gy+1, fillW, gh-2, SSD1306_WHITE);
+    // 段階マーク（2s/4s の位置に縦線）
+    const int8_t t1 = (int8_t)((gw-2)*2/6), t2 = (int8_t)((gw-2)*4/6);
+    display.drawFastVLine(gx+1+t1, gy, gh, SSD1306_BLACK);
+    display.drawFastVLine(gx+1+t2, gy, gh, SSD1306_BLACK);
+    display.setCursor(gx - 14, gy-3);
+    display.print(F("SP"));
+  }
+
+  if (shootingBossSpawned && shootingBoss.alive){
     const int barX = 0, barY = 8, barW = 120, barH = 6;
     display.drawRect(barX, barY, barW, barH, SSD1306_WHITE);
-    uint8_t hp = g2_boss.hp; if (hp > G2_BOSS_HP) hp = G2_BOSS_HP;
-    int fillW = (int)((barW - 2) * ((float)hp / (float)G2_BOSS_HP) + 0.5f);
+    uint8_t hp = shootingBoss.hp; if (hp > SHOOTING_BOSS_HP) hp = SHOOTING_BOSS_HP;
+    int fillW = (int)((barW - 2) * ((float)hp / (float)SHOOTING_BOSS_HP) + 0.5f);
     if (fillW < 0) fillW = 0;
     display.fillRect(barX + 1, barY + 1, fillW, barH - 2, SSD1306_WHITE);
   }
 
-  if (g2_clear){
+  if (shootingClear){
     display.setTextSize(2); drawCenteredText(22, F("CLEAR!"), 2);
     display.setTextSize(1); drawCenteredText(44, F("L:Next  R:Title"), 1);
-  } else if (g2_gameOver){
+  } else if (shootingGameOver){
     display.setTextSize(2); drawCenteredText(22, F("Miss!"), 2);
     display.setTextSize(1); drawCenteredText(44, F("L:Retry  R:Title"), 1);
   }
@@ -943,15 +678,378 @@ void g2_draw(){
 }
 
 /* =========================
- *  セットアップ
+ *  ジャンピング
  * ========================= */
+const int   JUMPING_PLAYER_W = 20;
+const int   JUMPING_PLAYER_H = 20;
+const float JUMPING_MOVE_SPEED = 3.2f;
+const float JUMPING_LV1_GRAVITY    = 0.4;  // 重力（易）
+const float JUMPING_LVMAX_GRAVITY   = 1.7f;  // 重力（難）
+const float JUMPING_LV1_JUMP_V     = -6.0f; // ジャンプ速度（易）
+const float JUMPING_LVMAX_JUMP_V    = -16.0f;  // ジャンプ速度（難）
+const int   JUMPING_SCROLL_TRIGGER_Y = 60;
+const uint8_t JUMPING_LIVES_MAX = 3;
+const uint8_t JUMPING_PLATFORM_COUNT = 8;  // 縦128px画面を埋めるために増量
+const uint8_t JUMPING_PLATFORM_H = 3;
+// レベル別難易度パラメータ（Lv1=易, LVMAX=難）
+const uint8_t  JUMPING_MAX_LEVEL       = 50;
+const uint16_t JUMPING_SCORE_PER_LEVEL = 100;
+const uint8_t  JUMPING_LV1_W_MIN       = 14;  // 足場最小幅（易）
+const uint8_t  JUMPING_LV1_W_MAX       = 22;  // 足場最大幅（易）
+const uint8_t  JUMPING_LV1_GAP_MIN     = 25;  // 足場間隔最小（易）
+const uint8_t  JUMPING_LV1_GAP_MAX     = 32;  // 足場間隔最大（易）
+const uint8_t  JUMPING_LV1_SPREAD      = 35;  // 横ばらつき（易）
+const uint8_t  JUMPING_LVMAX_W_MIN      = 8;   // 足場最小幅（難）
+const uint8_t  JUMPING_LVMAX_W_MAX      = 12;;  // 足場最大幅（難）
+const uint8_t  JUMPING_LVMAX_GAP_MIN    = 35;  // 足場間隔最小（難）
+const uint8_t  JUMPING_LVMAX_GAP_MAX    = 50;  // 足場間隔最大（難）
+const uint8_t  JUMPING_LVMAX_SPREAD     = 70;  // 横ばらつき（難）
+const float JUMPING_LAND_OVERLAP_MIN = 3.0f; // 着地に必要な足場との重なり量（px）
+const int JUMPING_SCREEN_W = 64;   // 縦向き（回転後）の画面幅
+const int JUMPING_SCREEN_H = 128;  // 縦向き（回転後）の画面高さ
+
+/* 縦向き（64px幅）用中央寄せ */
+void drawCenteredTextNarrow(int16_t y, const __FlashStringHelper* txt, uint8_t size=1){
+  display.setTextSize(size);
+  display.setTextWrap(false);
+  const char* p = (const char*)txt;
+  uint16_t len = strlen_P(p);
+  int16_t w = (int16_t)(len * 6 * size);
+  int16_t x = (JUMPING_SCREEN_W - w) / 2;
+  if (x < 0) x = 0;
+  display.setCursor(x, y);
+  display.print(txt);
+}
+
+struct JumpingPlatform { float x, y; uint8_t w; };
+
+JumpingPlatform jumpingPlatforms[JUMPING_PLATFORM_COUNT];
+float jumpingPlayerX = 0;
+float jumpingPlayerY = 0;
+float jumpingVelocityY = 0;
+uint32_t jumpingScore = 0;
+uint8_t jumpingLives = JUMPING_LIVES_MAX;
+bool jumpingGameOver = false;
+bool jumpingHardOver = false;
+bool jumpingGameOverSoundPlayed = false;
+uint32_t jumpingInputLockUntil = 0;
+bool jumpingFacingLeft = false;
+uint8_t jumpingEdgeStreak = 0;  // 画面端の連続回数
+uint8_t jumpingLevel = 1;       // 現在のレベル（スコアから計算）
+bool jumpingAirJumpAvailable = false; // 空中ジャンプ使用可能フラグ
+uint8_t jumpingAirGauge = 0;          // 空中ジャンプゲージ (0〜5)
+
+// ランタイム難易度パラメータ（レベルに応じて更新）
+uint8_t jumpingCurWMin   = JUMPING_LV1_W_MIN;
+uint8_t jumpingCurWMax   = JUMPING_LV1_W_MAX;
+uint8_t jumpingCurGapMin = JUMPING_LV1_GAP_MIN;
+uint8_t jumpingCurGapMax = JUMPING_LV1_GAP_MAX;
+uint8_t jumpingCurSpread = JUMPING_LV1_SPREAD;
+float   jumpingCurGravity = JUMPING_LV1_GRAVITY;
+float   jumpingCurJumpV   = JUMPING_LV1_JUMP_V;
+
+// 画面端とみなすX位置のしきい値（左端: <N  右端: >=W-N）
+#define JUMPING_EDGE_MARGIN 12
+
+Beep SND_JUMPING_BOUNCE = {1400, 40};
+
+/* PROGMEMビットマップを左右反転して描画 */
+static void drawBitmapFlipH(int16_t x, int16_t y, const uint8_t* bitmap, int16_t w, int16_t h, uint16_t color){
+  int16_t byteWidth = (w + 7) / 8;
+  for (int16_t j = 0; j < h; j++){
+    for (int16_t i = 0; i < w; i++){
+      int16_t src = w - 1 - i;
+      if (pgm_read_byte(bitmap + j * byteWidth + src / 8) & (0x80 >> (src % 8))){
+        display.drawPixel(x + i, y + j, color);
+      }
+    }
+  }
+}
+
+void computeJumpingLevelParams(){
+  uint8_t lv = jumpingLevel;
+  if (lv < 1) lv = 1;
+  if (lv > JUMPING_MAX_LEVEL) lv = JUMPING_MAX_LEVEL;
+  uint8_t t = lv - 1;
+  const uint8_t d = JUMPING_MAX_LEVEL - 1;
+  jumpingCurWMin   = (uint8_t)((int16_t)JUMPING_LV1_W_MIN   + ((int16_t)JUMPING_LVMAX_W_MIN   - JUMPING_LV1_W_MIN)   * t / d);
+  jumpingCurWMax   = (uint8_t)((int16_t)JUMPING_LV1_W_MAX   + ((int16_t)JUMPING_LVMAX_W_MAX   - JUMPING_LV1_W_MAX)   * t / d);
+  jumpingCurGapMin = (uint8_t)((int16_t)JUMPING_LV1_GAP_MIN + ((int16_t)JUMPING_LVMAX_GAP_MIN - JUMPING_LV1_GAP_MIN) * t / d);
+  jumpingCurGapMax = (uint8_t)((int16_t)JUMPING_LV1_GAP_MAX + ((int16_t)JUMPING_LVMAX_GAP_MAX - JUMPING_LV1_GAP_MAX) * t / d);
+  jumpingCurSpread = (uint8_t)((int16_t)JUMPING_LV1_SPREAD  + ((int16_t)JUMPING_LVMAX_SPREAD  - JUMPING_LV1_SPREAD)  * t / d);
+  jumpingCurGravity = JUMPING_LV1_GRAVITY + (JUMPING_LVMAX_GRAVITY - JUMPING_LV1_GRAVITY) * t / d;
+  jumpingCurJumpV   = JUMPING_LV1_JUMP_V  + (JUMPING_LVMAX_JUMP_V  - JUMPING_LV1_JUMP_V)  * t / d;
+}
+
+uint8_t randomJumpingPlatformWidth(){
+  return (uint8_t)random(jumpingCurWMin, jumpingCurWMax + 1);
+}
+
+int findHighestJumpingPlatformIndex(){
+  uint8_t highestIndex = 0;
+  for (uint8_t i = 1; i < JUMPING_PLATFORM_COUNT; ++i) {
+    if (jumpingPlatforms[i].y < jumpingPlatforms[highestIndex].y) highestIndex = i;
+  }
+  return highestIndex;
+}
+
+void respawnJumpingPlatformAbove(uint8_t index){
+  int highestIndex = findHighestJumpingPlatformIndex();
+  uint8_t width = randomJumpingPlatformWidth();
+  float anchorX = jumpingPlatforms[highestIndex].x;
+
+  // 画面端に張り付いている場合、連続回数をカウント
+  bool isEdge = (anchorX < JUMPING_EDGE_MARGIN) || (anchorX >= JUMPING_SCREEN_W - JUMPING_EDGE_MARGIN - width);
+  if (isEdge) { jumpingEdgeStreak++; } else { jumpingEdgeStreak = 0; }
+
+  float nextX;
+  if (jumpingEdgeStreak >= 3) {
+    // 3回連続したら中央からランダムに散らばす
+    float center = (JUMPING_SCREEN_W - width) / 2.0f;
+    nextX = center + (float)random(-(int)jumpingCurSpread, (int)jumpingCurSpread + 1);
+    jumpingEdgeStreak = 0;
+  } else {
+    nextX = anchorX + (float)random(-(int)jumpingCurSpread, (int)jumpingCurSpread + 1);
+  }
+  if (nextX < 0) nextX = 0;
+  if (nextX > JUMPING_SCREEN_W - width) nextX = JUMPING_SCREEN_W - width;
+
+  jumpingPlatforms[index].w = width;
+  jumpingPlatforms[index].x = nextX;
+  jumpingPlatforms[index].y = jumpingPlatforms[highestIndex].y - (float)random(jumpingCurGapMin, jumpingCurGapMax + 1);
+}
+
+void resetJumpingGame(){
+  jumpingScore = 0;
+  jumpingLives = JUMPING_LIVES_MAX;
+  jumpingGameOver = false;
+  jumpingHardOver = false;
+  jumpingGameOverSoundPlayed = false;
+  jumpingInputLockUntil = 0;
+  jumpingLevel = 1;
+  computeJumpingLevelParams();
+
+  jumpingPlatforms[0] = {12.0f, 108.0f, 40};
+  for (uint8_t i = 1; i < JUMPING_PLATFORM_COUNT; ++i) {
+    uint8_t width = randomJumpingPlatformWidth();
+    float nextX = jumpingPlatforms[i - 1].x + (float)random(-(int)jumpingCurSpread, (int)jumpingCurSpread + 1);
+    if (nextX < 0) nextX = 0;
+    if (nextX > JUMPING_SCREEN_W - width) nextX = JUMPING_SCREEN_W - width;
+    jumpingPlatforms[i] = {
+      nextX,
+      jumpingPlatforms[i - 1].y - (float)random(jumpingCurGapMin, jumpingCurGapMax + 1),
+      width
+    };
+  }
+
+  jumpingPlayerX = jumpingPlatforms[0].x + (jumpingPlatforms[0].w - JUMPING_PLAYER_W) / 2.0f;
+  jumpingPlayerY = jumpingPlatforms[0].y - JUMPING_PLAYER_H;
+  jumpingVelocityY = jumpingCurJumpV;
+  jumpingAirJumpAvailable = false;
+  jumpingAirGauge = 0;
+  display.setRotation(1);
+  setInvert(true);
+}
+
+void restartJumpingRun(){
+  uint32_t currentScore = jumpingScore;
+  jumpingGameOver = false;
+  jumpingHardOver = false;
+  jumpingGameOverSoundPlayed = false;
+  jumpingInputLockUntil = 0;
+  jumpingLevel = (uint8_t)(currentScore / JUMPING_SCORE_PER_LEVEL) + 1;
+  if (jumpingLevel > JUMPING_MAX_LEVEL) jumpingLevel = JUMPING_MAX_LEVEL;
+  computeJumpingLevelParams();
+
+  jumpingPlatforms[0] = {12.0f, 108.0f, 40};
+  for (uint8_t i = 1; i < JUMPING_PLATFORM_COUNT; ++i) {
+    uint8_t width = randomJumpingPlatformWidth();
+    float nextX = jumpingPlatforms[i - 1].x + (float)random(-(int)jumpingCurSpread, (int)jumpingCurSpread + 1);
+    if (nextX < 0) nextX = 0;
+    if (nextX > JUMPING_SCREEN_W - width) nextX = JUMPING_SCREEN_W - width;
+    jumpingPlatforms[i] = {
+      nextX,
+      jumpingPlatforms[i - 1].y - (float)random(jumpingCurGapMin, jumpingCurGapMax + 1),
+      width
+    };
+  }
+
+  jumpingPlayerX = jumpingPlatforms[0].x + (jumpingPlatforms[0].w - JUMPING_PLAYER_W) / 2.0f;
+  jumpingPlayerY = jumpingPlatforms[0].y - JUMPING_PLAYER_H;
+  jumpingVelocityY = jumpingCurJumpV;
+  jumpingAirJumpAvailable = false;
+  jumpingAirGauge = 0;
+  jumpingScore = (uint32_t)currentScore;
+  display.setRotation(1);
+  setInvert(true);
+}
+
+void commitJumpingDeath(){
+  if (!jumpingGameOver) {
+    jumpingGameOver = true;
+    if (!jumpingGameOverSoundPlayed) { playBeep(SND_GAMEOVER); jumpingGameOverSoundPlayed = true; }
+    if (jumpingLives > 0) jumpingLives--;
+    if (jumpingLives == 0) {
+      jumpingHardOver = true;
+      setInvert(false);
+    } else {
+      jumpingHardOver = false;
+    }
+    jumpingInputLockUntil = millis() + 500;
+    jumpingBtnLeftPrev  = false;
+    jumpingBtnRightPrev = false;
+  }
+}
+
+void updateJumpingGame(){
+  if (jumpingGameOver) {
+    if (millis() < jumpingInputLockUntil) return;
+
+    bool leftEdge  = btnEdge(PIN_JUMPING_LEFT,  jumpingBtnLeftPrev);
+    bool rightEdge = btnEdge(PIN_JUMPING_RIGHT, jumpingBtnRightPrev);
+    if (jumpingHardOver) {
+      if (leftEdge)  { playBeep(SND_RESTART); resetJumpingGame(); }
+      if (rightEdge) { playBeep(SND_CANCEL); setInvert(true); resetTitle(); }
+    } else {
+      if (leftEdge)  { playBeep(SND_RESTART); restartJumpingRun(); }
+      if (rightEdge) { playBeep(SND_CANCEL); setInvert(true); resetTitle(); }
+    }
+    return;
+  }
+
+  float horizontalMove = 0.0f;
+  if (digitalRead(PIN_JUMPING_LEFT)  == LOW) horizontalMove -= JUMPING_MOVE_SPEED;
+  if (digitalRead(PIN_JUMPING_RIGHT) == LOW) horizontalMove += JUMPING_MOVE_SPEED;
+  bool airJumpEdge = btnEdge(PIN_BTN_DASH, btnDashPrev);
+
+  if      (horizontalMove < 0) jumpingFacingLeft = true;
+  else if (horizontalMove > 0) jumpingFacingLeft = false;
+
+  jumpingPlayerX += horizontalMove;
+  if (jumpingPlayerX < 0) jumpingPlayerX = 0;
+  if (jumpingPlayerX > JUMPING_SCREEN_W - JUMPING_PLAYER_W) jumpingPlayerX = JUMPING_SCREEN_W - JUMPING_PLAYER_W;
+
+  float previousBottom = jumpingPlayerY + JUMPING_PLAYER_H;
+  jumpingVelocityY += jumpingCurGravity;
+  jumpingPlayerY += jumpingVelocityY;
+
+  if (jumpingVelocityY > 0) {
+    for (uint8_t i = 0; i < JUMPING_PLATFORM_COUNT; ++i) {
+      float topY = jumpingPlatforms[i].y;
+      float leftX = jumpingPlatforms[i].x;
+      float rightX = jumpingPlatforms[i].x + jumpingPlatforms[i].w;
+      float playerLeft = jumpingPlayerX + 3;
+      float playerRight = jumpingPlayerX + JUMPING_PLAYER_W - 3;
+      // 着地有効範囲：プレイヤーと足場の重なりが3px以上必要
+      float overlapLeft  = (playerLeft  > leftX)  ? playerLeft  : leftX;
+      float overlapRight = (playerRight < rightX)  ? playerRight : rightX;
+      bool overlapsX = (overlapRight - overlapLeft) >= 3.0f;
+      bool crossesY = previousBottom <= topY && (jumpingPlayerY + JUMPING_PLAYER_H) >= topY;
+      if (overlapsX && crossesY) {
+        jumpingPlayerY = topY - JUMPING_PLAYER_H;
+        jumpingVelocityY = jumpingCurJumpV;
+        jumpingAirJumpAvailable = true;
+        if (jumpingAirGauge < 5) jumpingAirGauge++; // 着地でゲージ増加
+        playBeep(SND_JUMPING_BOUNCE);
+        break;
+      }
+    }
+  }
+
+  // 空中ジャンプ（ゲージに応じた高さ: 1段=0.5倍〜5段=1.5倍）
+  if (airJumpEdge && jumpingAirJumpAvailable) {
+    // ゲージ1段=0.9倍 〜 5段=2.5倍
+    float ratio = 0.9f + jumpingAirGauge * 0.4f;
+    jumpingVelocityY = jumpingCurJumpV * ratio;
+    jumpingAirJumpAvailable = false;
+    // ゲージに応じて音を派手に（高くなるほど高音・長く）
+    uint16_t freq = 800 + jumpingAirGauge * 300;  // 1100〜2300Hz
+    uint16_t dur  = 40  + jumpingAirGauge * 20;   // 60〜140ms
+    if (BUZZER_ENABLED) buzzerPlayRaw(freq, dur);
+    jumpingAirGauge = 0;
+  }
+
+  if (jumpingPlayerY < JUMPING_SCROLL_TRIGGER_Y) {
+    float scrollDelta = JUMPING_SCROLL_TRIGGER_Y - jumpingPlayerY;
+    jumpingPlayerY = JUMPING_SCROLL_TRIGGER_Y;
+    jumpingScore += (uint32_t)scrollDelta;
+    { uint8_t newLv = (uint8_t)(jumpingScore / JUMPING_SCORE_PER_LEVEL) + 1; if (newLv > JUMPING_MAX_LEVEL) newLv = JUMPING_MAX_LEVEL; if (newLv != jumpingLevel) { jumpingLevel = newLv; computeJumpingLevelParams(); playBeep(SND_JUMPING_LEVELUP); } }
+    for (uint8_t i = 0; i < JUMPING_PLATFORM_COUNT; ++i) {
+      jumpingPlatforms[i].y += scrollDelta;
+      if (jumpingPlatforms[i].y > JUMPING_SCREEN_H + 6) respawnJumpingPlatformAbove(i);
+    }
+  }
+
+  if (jumpingPlayerY > JUMPING_SCREEN_H + 8) {
+    commitJumpingDeath();
+  }
+}
+
+void drawJumpingGame(){
+  display.clearDisplay();
+  display.setTextWrap(false);
+  display.setTextColor(SSD1306_WHITE);
+
+  for (int x = 4; x < JUMPING_SCREEN_W; x += 18) {
+    int y = ((x * 9) + ((int)jumpingScore / 7)) % 28;
+    display.drawPixel(x, y, SSD1306_WHITE);
+  }
+
+  for (uint8_t i = 0; i < JUMPING_PLATFORM_COUNT; ++i) {
+    display.fillRect((int)jumpingPlatforms[i].x, (int)jumpingPlatforms[i].y, jumpingPlatforms[i].w, JUMPING_PLATFORM_H, SSD1306_WHITE);
+  }
+
+  if (jumpingFacingLeft)
+    drawBitmapFlipH((int)jumpingPlayerX, (int)jumpingPlayerY, PLAYER_BMP, JUMPING_PLAYER_W, JUMPING_PLAYER_H, SSD1306_WHITE);
+  else
+    display.drawBitmap((int)jumpingPlayerX, (int)jumpingPlayerY, PLAYER_BMP, JUMPING_PLAYER_W, JUMPING_PLAYER_H, SSD1306_WHITE);
+
+  display.setTextSize(1);
+  display.setCursor(0, 0);
+  display.print(F("LV:")); display.print((int)jumpingLevel);
+  display.setCursor(33, 0);
+  display.print(F("LF:")); display.print((int)jumpingLives);
+  display.setCursor(0, 9);
+  display.print(F("UP:")); display.print(jumpingScore);
+
+  // 空中ジャンプゲージ（右端に縦バー、5段階）
+  {
+    const int8_t bx = JUMPING_SCREEN_W - 5;
+    const int8_t totalH = 40;
+    const int8_t by = 20;
+    display.drawRect(bx, by, 4, totalH, SSD1306_WHITE);
+    if (jumpingAirGauge > 0){
+      int8_t fillH = (int8_t)(totalH * jumpingAirGauge / 5) - 2;
+      if (fillH < 1) fillH = 1;
+      display.fillRect(bx+1, by + totalH - 1 - fillH, 2, fillH, SSD1306_WHITE);
+    }
+  }
+
+  if (jumpingGameOver && jumpingHardOver) {
+    display.setTextSize(2); drawCenteredTextNarrow(50,  F("GAME OVER"), 1);
+    display.setTextSize(1); drawCenteredTextNarrow(64,  F("\x1b:Retry"),  1);
+    display.setTextSize(1); drawCenteredTextNarrow(74,  F("Title:\x1a"),  1);
+  } else if (jumpingGameOver) {
+    display.setTextSize(2); drawCenteredTextNarrow(50,  F("Miss!"),     1);
+    display.setTextSize(1); drawCenteredTextNarrow(64,  F("\x1b:Retry"),  1);
+    display.setTextSize(1); drawCenteredTextNarrow(74,  F("Title:\x1a"),  1);
+  }
+
+  display.display();
+}
+
 void setup(){
   pinMode(PIN_BTN_JUMP, INPUT_PULLUP);
   pinMode(PIN_BTN_DASH, INPUT_PULLUP);
+  pinMode(PIN_JUMPING_LEFT, INPUT_PULLUP);
   pinMode(LED_BUILTIN, OUTPUT);
 
   Wire.begin();
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) { while(1) delay(200); }
+  display.ssd1306_command(0xD5); // ディスプレイクロック設定
+  display.ssd1306_command(0x10); // オシレータ最大・分周比1 → リフレッシュレート向上
+  display.ssd1306_command(0x81); // コントラスト設定
+  display.ssd1306_command(0x70); // 0x00(最暗)〜0xFF(最明)、デフォルト0x7F
 
   display.stopscroll();
   display.setRotation(0);
@@ -961,18 +1059,14 @@ void setup(){
   display.display();
   display.setTextSize(1);
   display.invertDisplay(true);
-  g_displayInverted = true;   // このプロジェクトでは true=通常表示 として扱う
-
-  resetTitle();
-  g1_reset();
-  g2_reset();
+  g_displayInverted = true;
 
   randomSeed(analogRead(A0));
+
+  resetTitle();
+  resetShootingGame();
 }
 
-/* =========================
- *  タイトル描画
- * ========================= */
 void drawTitle(){
   display.clearDisplay();
 
@@ -982,21 +1076,40 @@ void drawTitle(){
   display.setTextWrap(false);
   display.setTextColor(SSD1306_WHITE);
 
-  display.setCursor(10, 28); display.print(F("1: Jumping Game"));
-  display.setCursor(10, 40); display.print(F("2: Shooting Game"));
+  display.setCursor(10, 28); display.print(F("1: Shooting Game"));
+  display.setCursor(10, 40); display.print(F("2: Jumping Game"));
 
-  int selY = (titleSel==0) ? 28 : 40;
-  display.fillTriangle(2, selY+2, 8, selY, 8, selY+8, SSD1306_WHITE);
+  int selectorY = (titleSelection == 0) ? 28 : 40;
+  display.fillTriangle(2, selectorY + 2, 8, selectorY, 8, selectorY + 8, SSD1306_WHITE);
 
   display.fillRect(0, 52, OLED_WIDTH, 12, SSD1306_BLACK);
-  drawCenteredText(52, F("L:Change  R:Start"), 1);
+
+  // 左下: ▲(D5=Start) と ▼(D6=Change) を横並び
+  // ▲ 上向き三角
+  display.fillTriangle(4, 54, 1, 61, 7, 61, SSD1306_WHITE);
+  // ▼ 下向き三角
+  display.drawTriangle(9, 54, 15, 54, 12, 61, SSD1306_WHITE);
+
+  // 中央: 音アイコン（小、矢印行と同じy）
+  {
+    const int8_t sx = 57, sy = 55;
+    display.fillRect(sx, sy+1, 2, 5, SSD1306_WHITE);      // ボディ
+    display.drawLine(sx+1, sy,   sx+4, sy-1, SSD1306_WHITE); // ホーン上
+    display.drawLine(sx+1, sy+6, sx+4, sy+8, SSD1306_WHITE); // ホーン下
+    if (BUZZER_ENABLED){
+      display.drawFastVLine(sx+6, sy+1, 5, SSD1306_WHITE);  // 音波
+    } else {
+      display.drawLine(sx+6, sy+1, sx+9, sy+6, SSD1306_WHITE); // X
+      display.drawLine(sx+9, sy+1, sx+6, sy+6, SSD1306_WHITE);
+    }
+  }
+
+  // 右下: ● (A3ボタン = サウンドON/OFF)
+  display.fillCircle(120, 58, 3, SSD1306_WHITE);
 
   display.display();
 }
 
-/* =========================
- *  メインループ
- * ========================= */
 void loop(){
   static uint32_t lastFrame = 0;
   uint32_t now = millis();
@@ -1008,40 +1121,41 @@ void loop(){
 
   switch(mode){
     case MODE_TITLE: {
-      if (btnEdge(PIN_BTN_JUMP, btnJumpPrev)){ titleSel ^= 1; playBeep(SND_SELECT); }
+      bool titleChange = btnEdge(PIN_BTN_JUMP, btnJumpPrev);
+      bool soundToggle = btnEdge(PIN_JUMPING_LEFT, jumpingBtnLeftPrev);
+      if (titleChange){
+        titleSelection ^= 1;
+        playBeep(SND_SELECT);
+      }
+      if (soundToggle){
+        BUZZER_ENABLED = !BUZZER_ENABLED;
+        if (BUZZER_ENABLED) playBeep(SND_SELECT);
+      }
       if (btnEdge(PIN_BTN_DASH, btnDashPrev)){
         playBeep(SND_START);
-        setInvert(true); // 念のため通常表示に戻す
-        if (titleSel==0){ g1_reset(); mode=MODE_GAME1; }
-        else { g2_reset(); mode=MODE_GAME2; }
+        setInvert(true);
+        if (titleSelection == 0) {
+          resetShootingGame();
+          mode = MODE_SHOOTING;
+        } else {
+          resetJumpingGame();
+          mode = MODE_JUMPING;
+        }
       }
       drawTitle();
     } break;
 
-    case MODE_GAME1: {
-      g1_update();
-      g1_draw();
-      if (g1_gameOver){
-        bool jEdge = btnEdge(PIN_BTN_JUMP, btnJumpPrev);
-        bool dEdge = btnEdge(PIN_BTN_DASH, btnDashPrev);
-        if (millis() >= g1_inputLockUntil) {
-          if (g1_hardOver){
-            if (jEdge){ playBeep(SND_RESTART); g1_reset(); }         // L: Stage1
-            if (dEdge){ playBeep(SND_CANCEL); setInvert(true); resetTitle(); mode=MODE_TITLE; } // R: Title
-          }else{
-            if (jEdge){ playBeep(SND_RESTART); g1_stageStartReset(); } // L: Retry 同ステージ先頭
-            if (dEdge){ playBeep(SND_CANCEL); setInvert(true); resetTitle(); mode=MODE_TITLE; } // R: Title
-          }
-        }
+    case MODE_SHOOTING: {
+      updateShootingGame();
+      drawShootingGame();
+      if (!(shootingGameOver || shootingClear)) {
+        shootingScore += 1;
       }
     } break;
 
-    case MODE_GAME2: {
-      g2_update();
-      g2_draw();
-      if (!(g2_gameOver || g2_clear)) {
-        g2_score += 1;
-      }
+    case MODE_JUMPING: {
+      updateJumpingGame();
+      drawJumpingGame();
     } break;
   }
 }
