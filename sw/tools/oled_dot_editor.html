@@ -2,24 +2,25 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>ドット絵ワークショップ（可変サイズ対応）</title>
+<title>OLEDドット絵エディタ</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <style>
 body{
   font-family: system-ui, sans-serif;
-  margin:20px;
+  margin:20px auto;
+  max-width:1640px;
   user-select:none;
-  display:flex;             /* 全体を中央寄せ */
-  flex-direction:column; /* タイトル→本体を縦に並べる */
-  justify-content:center;   /* 横方向中央 */
-  align-items:center;   /* 横方向中央（列レイアウト） */
+  display:flex;
+  flex-direction:column;
+  justify-content:flex-start;
+  align-items:flex-start;
 }
 .topRow{
   display:flex;
   gap:16px;
   align-items:flex-start;
   width:100%;
-  max-width:960px;          /* セット全体の最大幅 */
+  max-width:1600px;          /* セット全体の最大幅 */
 }
 .leftColumn{
   display:flex;
@@ -27,21 +28,42 @@ body{
   gap:12px;
   flex:1 1 auto;
 }
+#canvasWrap{
+  line-height:0;
+  display:flex;
+  flex-direction:row;
+  gap:8px;
+  align-items:flex-start;
+}
+#refImgEl{
+  display:none;
+  border:2px solid #aaa;
+  image-rendering:pixelated;
+  object-fit:contain;
+  background:#fff;
+}
+#refImgEl.show-left{
+  display:block;
+}
 #viewCanvas{
   border:2px solid #333;
-  width:95vw;
-  max-width:600px;
-  aspect-ratio:1/1;
   image-rendering:pixelated;
   touch-action:none;
+  display:block;
 }
 
 /* 右パネル（全体） */
 .rightPanel{
-  width:280px;
   display:flex;
-  flex-direction:column;
+  flex-direction:row;
   gap:12px;
+  align-items:stretch;
+  flex:1 1 auto;
+  min-width:0;
+}
+.rightPanel > .card{
+  flex:1 1 0;
+  min-width:220px;
 }
 @media(max-width:900px){
   .topRow{
@@ -49,6 +71,10 @@ body{
   }
   .rightPanel{
     width:100%;
+    flex-wrap:wrap;
+  }
+  .rightPanel > .card{
+    flex:1 1 280px;
   }
 }
 
@@ -99,10 +125,11 @@ body{
 /* サイズ入力用 */
 .sizeRow{
   display:grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr auto;
   gap:10px;
   margin-bottom:10px;
   font-size:14px;
+  align-items:end;
 }
 .sizeRow label{
   display:flex;
@@ -151,11 +178,11 @@ body{
 .btnMode{background:#eee;}
 .btnFill{background:#dff7ff;}
 .modeRow{display:flex; flex-direction:row; gap:10px;}
-.modeRow button{min-width:0; font-size:18px; padding:14px; white-space:nowrap; text-align:center; flex:1 1 0;}
+.modeRow button{min-width:0; font-size:18px; padding:14px; white-space:nowrap; text-align:center; justify-content:center; display:flex; align-items:center; flex:1 1 0;}
 
 /* OLEDコードカード（キャンバスの下） */
 #oledCard{
-  max-width:600px;
+  max-width:800px;
   width:95vw;
   background:#f7f7f7;
   border-radius:14px;
@@ -177,8 +204,8 @@ body{
   border-radius:12px;
   border:1px solid #ccc;
   box-sizing:border-box;
-  background:#eee;
-  color:#666;
+  background:#fff;
+  color:#333;
 }
 #codeText{
   width:100%;
@@ -207,7 +234,7 @@ body{
 /* Title */
 .pageTitle{
   width:100%;
-  max-width:960px;
+  max-width:1160px;
   margin: 0 auto 14px auto;
   font-size: 22px;
   font-weight: 800;
@@ -271,7 +298,23 @@ body{
 <div class="topRow">
   <!-- 左：ドット絵＋OLEDコード -->
   <div class="leftColumn">
-    <canvas id="viewCanvas" width="600" height="600"></canvas>
+    <!-- キャンバス表示モード -->
+    <div style="font-size:13px; display:flex; gap:16px; align-items:center; flex-wrap:wrap; padding:4px 2px;">
+      <strong>セル表示：</strong>
+      <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="canvasMode" value="current" checked> キャンバス固定</label>
+      <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="canvasMode" value="fit"> セル正方形</label>
+      <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="canvasMode" value="scroll"> 固定セル＋スクロール</label>
+      <span id="currentSizeControls" style="display:inline-flex; align-items:center; gap:6px;">
+        |
+        <button id="cvSizeS" style="width:auto; font-size:12px; padding:1px 8px;">小</button>
+        <button id="cvSizeM" style="width:auto; font-size:12px; padding:1px 8px;">中</button>
+        <button id="cvSizeL" style="width:auto; font-size:12px; padding:1px 8px; font-weight:bold;">大</button>
+      </span>
+    </div>
+    <div id="canvasWrap">
+      <img id="refImgEl" alt="参考画像">
+      <canvas id="viewCanvas" width="600" height="600"></canvas>
+    </div>
 
     <!-- ★ OLEDコード：ドット絵の「下」にまとめて配置 -->
     <div id="oledCard">
@@ -291,14 +334,28 @@ body{
       </div>
 
       <div id="codeArea">
-        <input id="varName" value="PLAYER_BMP" readonly>
+        <input id="varName" value="PLAYER_BMP">
         <textarea id="codeText" readonly placeholder="ここにコードが出ます（上の「コードを作る」で生成）"></textarea>
 
-        <div style="margin-top:10px;">
-          <button id="copyBtn" class="btnCopy">コピー</button>
+        <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+          <button id="copyBtn" class="btnCopy" style="padding:8px 20px; font-size:14px;">全体コピー📋</button>
+          <button id="copyArrayBtn" class="btnCopy" style="padding:8px 20px; font-size:14px;">配列部分コピー📋</button>
+          <span id="copyMsg" style="font-size:12px; color:#2a7a2a;"></span>
         </div>
 
         <div class="smallNote" id="codeHint"></div>
+      </div>
+
+      <!-- コードから復元 -->
+      <div id="importCodeArea" style="margin-top:14px;">
+        <div style="font-weight:bold;margin-bottom:6px;">コードから復元📋</div>
+        <textarea id="importCodeText" style="width:100%;height:110px;font-family:monospace;font-size:11px;box-sizing:border-box;" placeholder="上で生成したCコードを貼り付けてください"></textarea>
+        <div style="margin-top:6px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+          <label style="font-size:12px;"><input type="checkbox" id="importInvertChk"> 黒背景（白黒反転）で生成したコードの場合</label>
+          <button id="importCodeBtn" class="btnCode" style="padding:6px 14px;">復元🔄</button>
+        </div>
+        <div class="smallNote" id="importCodeMsg"></div>
+        <div class="smallNote" style="margin-top:4px;">※ 配列データ（0x〜）と <code>//(幅x高さ)</code> 形式のコメント（例：<code>//(20x20)</code>）が必要です</div>
       </div>
     </div>
   </div>
@@ -314,12 +371,13 @@ body{
       <div class="sizeRow">
         <label>
           横（マス）
-          <input id="gridWInput" type="number" min="4" max="32" value="20">
+          <input id="gridWInput" type="number" min="4" max="200" value="20">
         </label>
         <label>
           縦（マス）
-          <input id="gridHInput" type="number" min="4" max="32" value="20">
+          <input id="gridHInput" type="number" min="4" max="200" value="20">
         </label>
+        <button id="applySizeBtn" class="btnFlip" style="white-space:nowrap;">サイズ反映📐</button>
       </div>
 
       <div class="grid2" style="margin-bottom:10px;">
@@ -329,15 +387,24 @@ body{
       </div>
 
       <div class="modeRow" style="margin-bottom:10px;">
-        <button id="penModeBtn" class="btnMode btnActive">ペン🖋</button>
-        <button id="fillModeBtn" class="btnFill">塗り潰し💧</button>
+        <button id="penModeBtn" class="btnMode btnActive" title="ペン">🖋</button>
+        <button id="fillModeBtn" class="btnFill" title="塗り潰し">💧</button>
+        <button id="lineModeBtn" class="btnMode" title="直線">📏</button>
+        <button id="rectModeBtn" class="btnMode" title="四角形">🔲</button>
+        <button id="ellipseModeBtn" class="btnMode" title="丸／楕円">⭕</button>
       </div>
 
-      <button id="undoBtn" class="btnUndo" style="margin-bottom:10px;">一つ戻す🔙</button>
+            <div class="grid2" style="margin-bottom:10px;">
+        <button id="undoBtn" class="btnUndo">一つ戻す🔙</button>
+        <button id="redoBtn" class="btnUndo" style="background:#cce7ff;">一つ進む🔜</button>
+      </div>
 
       <div class="grid2" style="margin-bottom:10px;">
         <button id="flipHBtn" class="btnFlip">左右反転⇌</button>
-        <button id="clearBtn" class="btnClear">全部消す🧹</button>
+        <button id="flipVBtn" class="btnFlip">上下反転⇅</button>
+      </div>
+      <div class="grid2" style="margin-bottom:10px;">
+        <button id="clearBtn" class="btnClear" style="grid-column:1/-1;">全部消す🧹</button>
       </div>
 
       <div class="dpad">
@@ -354,22 +421,69 @@ body{
         <div class="spacer">.</div>
       </div>
 
-      <div class="smallNote">※ サイズを変えると えは きえます<br>※ シフトは はみ出たぶんは けえます</div>
+      <div class="grid2" style="margin-top:8px;">
+        <button id="rotateCWBtn">+90°回転↻</button>
+        <button id="rotateCCWBtn">-90°回転↺</button>
+      </div>
+      <div class="smallNote" style="margin-top:8px;">※ シフト・回転ではみ出た部分は消えます</div>
     </div>
 
     <!-- サンプルエリア -->
     <div class="card">
       <h2>ファイル選択📄</h2>
+
+      <!-- 参考画像 -->
+      <div style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #e0e0e0;">
+        <div style="font-weight:bold; margin-bottom:6px;">参考画像🖼️</div>
+        <div style="display:flex; gap:8px; margin-bottom:8px;">
+          <button id="loadRefImgBtn" class="btnSample" style="flex:1; width:auto;">画像読み込み</button>
+          <button id="clearRefImgBtn" class="btnClear" style="flex:1; width:auto;">消去</button>
+        </div>
+        <input id="refImgFileInput" type="file" accept="image/*" style="display:none;">
+        <div style="display:flex; gap:14px; align-items:center; flex-wrap:wrap; font-size:14px;">
+          <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="refImgMode" value="left"> 左隣に表示</label>
+          <label style="display:flex;align-items:center;gap:4px;"><input type="radio" name="refImgMode" value="bg" checked> 背景に表示</label>
+        </div>
+        <div style="margin-top:6px; display:flex; align-items:center; gap:8px; font-size:13px;">
+          <label>透明度：
+            <input id="refImgOpacity" type="range" min="10" max="100" value="50" style="vertical-align:middle;">
+            <span id="refImgOpacityVal">50%</span>
+          </label>
+        </div>
+        <div id="leftSizeControls" style="margin-top:6px; display:none; align-items:center; gap:8px; font-size:13px;">
+          <span>表示サイズ：</span>
+          <button id="refImgSizeSmall" style="width:auto;">小</button>
+          <button id="refImgSizeLarge" style="width:auto; font-weight:bold;">大</button>
+        </div>
+        <div id="bgAdjustControls" style="display:block; margin-top:6px; font-size:13px;">
+          <div style="display:grid; grid-template-columns:4em 1fr auto; align-items:center; gap:4px 6px;">
+            <span>拡大率</span>
+            <input id="refBgScale" type="range" min="30" max="300" value="100" step="5">
+            <span id="refBgScaleVal" style="min-width:3em; text-align:right;">100%</span>
+            <span>横移動</span>
+            <input id="refBgOffsetX" type="range" min="-400" max="400" value="0" step="2">
+            <span id="refBgOffsetXVal" style="min-width:3em; text-align:right;">0px</span>
+            <span>縦移動</span>
+            <input id="refBgOffsetY" type="range" min="-400" max="400" value="0" step="2">
+            <span id="refBgOffsetYVal" style="min-width:3em; text-align:right;">0px</span>
+          </div>
+          <button id="refBgResetBtn" style="width:auto; margin-top:4px; font-size:12px;">リセット</button>
+        </div>
+        <div class="smallNote" id="refImgNote">画像未読込</div>
+      </div>
       <!-- 上：よみこみ → かきだし（わかりやすく上から順） -->
+      <div style="margin-bottom:12px; padding-bottom:12px; border-bottom:1px solid #e0e0e0;">
+        <div style="font-weight:bold; margin-bottom:6px;">ドット絵管理📁</div>
       <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
         <div class="btnWrap">
-          <button id="importBtn" class="btnSample">リストを読込📥</button>
+          <button id="importBtn" class="btnSample">リストを読込み📥</button>
           <div class="btnHelp">以前保存した .json を読込んで、登録リストを更新します（今のリストは上書き）</div>
         </div>
         <div class="btnWrap">
-          <button id="exportBtn" class="btnRegister">リストを書出📤</button>
+          <button id="exportBtn" class="btnRegister">リストを書出し📤</button>
           <div class="btnHelp">今の登録リストを .json に書出ます（場所と名前をえらべます ※主にChrome/Edge）</div>
         </div>
+      </div>
       </div>
       <input id="importFileFallback" type="file" accept="application/json" style="display:none;">
 
@@ -379,17 +493,17 @@ body{
 
       <div class="grid2" style="margin-bottom:10px;">
         <div class="btnWrap">
-          <button id="applySampleBtn" class="btnSample">選択イラストを表示</button>
+          <button id="applySampleBtn" class="btnSample">選択ドット絵を表示</button>
           <div class="btnHelp">登録リストで選んだイラストを、左のドット絵に表示します</div>
         </div>
         <div class="btnWrap">
-          <button id="registerSampleBtn" class="btnRegister">ドット絵をリスト登録</button>
+          <button id="registerSampleBtn" class="btnRegister">ドット絵を<br/>リスト登録</button>
           <div class="btnHelp">今のドット絵を登録リストに追加します（同じ名前は上書き）</div>
         </div>
       </div>
 
       <div class="btnWrap">
-        <button id="deleteSampleBtn" class="btnDelete">サンプルをリストから削除</button>
+        <button id="deleteSampleBtn" class="btnDelete">リストから削除</button>
         <div class="btnHelp">登録リストから削除します（※ファイルに残すには「リストを書出」で保存してね）</div>
       </div>
 
@@ -400,6 +514,11 @@ body{
 </div>
 
 <script>
+// ===== 図形描画用の一時変数 =====
+let shapeStart = null; // {x, y}
+let shapeEnd = null;   // {x, y}
+let isShapeDrawing = false;
+let shapePreviewPixels = null; // プレビュー用一時ピクセル配列
 /* ===== 基本設定 ===== */
 const VIEW = 600;
 let gridW = 20;
@@ -413,8 +532,11 @@ const gridHInput = document.getElementById("gridHInput");
 let tool = "black";
 let outputBg = "white"; // 出力用の背景色（white/black）
 let drawMode = "pen"; // "pen" or "fill"
+let canvasMode = "current"; // "current" / "fit" / "scroll"
+let currentCanvasSize = 800; // 大=800, 中=600, 小=400
 let pixels = createEmptyPixels(gridW, gridH);
 let history = [];
+let redoHistory = [];
 
 /* ===== ユーティリティ ===== */
 function createEmptyPixels(w, h){
@@ -467,8 +589,8 @@ function normalizeImported(obj){
     if (!name) continue;
     if (val && typeof val === "object" && Array.isArray(val.data)) {
       out[name] = {
-        w: Math.max(4, Math.min(32, (val.w||20)|0)),
-        h: Math.max(4, Math.min(32, (val.h||20)|0)),
+        w: Math.max(4, Math.min(200, (val.w||20)|0)),
+        h: Math.max(4, Math.min(200, (val.h||20)|0)),
         data: val.data
       };
     } else if (Array.isArray(val) && Array.isArray(val[0])) {
@@ -645,13 +767,173 @@ if (importFileFallback) {
   importFileFallback.addEventListener('change', ()=>importSamplesFallback(importFileFallback));
 }
 
+/* ===== 参考画像読み込み ===== */
+const refImgEl       = document.getElementById('refImgEl');
+const refImgFileInput= document.getElementById('refImgFileInput');
+const refImgOpacityEl= document.getElementById('refImgOpacity');
+const refImgOpacityVal= document.getElementById('refImgOpacityVal');
+const refImgSizeSmallBtn = document.getElementById('refImgSizeSmall');
+const refImgSizeLargeBtn = document.getElementById('refImgSizeLarge');
+const leftSizeControls   = document.getElementById('leftSizeControls');
+const bgAdjustControls   = document.getElementById('bgAdjustControls');
+const refBgScaleEl       = document.getElementById('refBgScale');
+const refBgScaleValEl    = document.getElementById('refBgScaleVal');
+const refBgOffsetXEl     = document.getElementById('refBgOffsetX');
+const refBgOffsetXValEl  = document.getElementById('refBgOffsetXVal');
+const refBgOffsetYEl     = document.getElementById('refBgOffsetY');
+const refBgOffsetYValEl  = document.getElementById('refBgOffsetYVal');
+const refImgNote     = document.getElementById('refImgNote');
+let refImgSizePx   = 400; // 大=400, 小=150
+let refImgBgScale   = 1.0;
+let refImgBgOffsetX = 0;
+let refImgBgOffsetY = 0;
+
+function applyRefImgMode(){
+  if(!refImg){ return; }
+  if(refImgMode === "left"){
+    // left モード: <img> を指定サイズで横並び
+    refImgEl.style.width  = "auto";
+    refImgEl.style.height = refImgSizePx + "px";
+    refImgEl.style.maxWidth = "none";
+    refImgEl.style.opacity = "1";
+    refImgEl.classList.add("show-left");
+    leftSizeControls.style.display = "";
+    bgAdjustControls.style.display = "none";
+  } else {
+    // bg モード: <img> は非表示
+    refImgEl.classList.remove("show-left");
+    leftSizeControls.style.display = "none";
+    bgAdjustControls.style.display = "";
+  }
+  draw();
+}
+
+function loadRefImageFromFile(file){
+  if(!file) return;
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    if(refImg && refImg._blobUrl) URL.revokeObjectURL(refImg._blobUrl);
+    img._blobUrl = url;
+    refImg = img;
+    refImgEl.src = url;
+    refImgNote.textContent = `読込済：${file.name} (${img.naturalWidth}×${img.naturalHeight})`;
+    applyRefImgMode();
+  };
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    alert("画像の読み込みに失敗しました。");
+  };
+  img.src = url;
+}
+
+document.getElementById('loadRefImgBtn').onclick = () => refImgFileInput.click();
+document.getElementById('clearRefImgBtn').onclick = () => {
+  if(refImg && refImg._blobUrl) URL.revokeObjectURL(refImg._blobUrl);
+  refImg = null;
+  refImgEl.src = "";
+  refImgEl.classList.remove("show-left");
+  refImgNote.textContent = "画像未読込";
+  draw();
+};
+refImgFileInput.addEventListener('change', () => {
+  loadRefImageFromFile(refImgFileInput.files && refImgFileInput.files[0]);
+  refImgFileInput.value = "";
+});
+document.querySelectorAll('input[name="refImgMode"]').forEach(r => {
+  r.addEventListener('change', () => {
+    refImgMode = r.value;
+    applyRefImgMode();
+  });
+});
+if(refImgOpacityEl){
+  refImgOpacityEl.addEventListener('input', () => {
+    refImgOpacity = refImgOpacityEl.value / 100;
+    refImgOpacityVal.textContent = refImgOpacityEl.value + "%";
+    draw();
+  });
+}
+// 背景モード：拡大縮小・オフセット
+function syncBgAdjustUI(){
+  refBgScaleValEl.textContent   = Math.round(refImgBgScale * 100) + "%";
+  refBgOffsetXValEl.textContent = refImgBgOffsetX + "px";
+  refBgOffsetYValEl.textContent = refImgBgOffsetY + "px";
+}
+if(refBgScaleEl){
+  refBgScaleEl.addEventListener('input', () => {
+    refImgBgScale = parseInt(refBgScaleEl.value) / 100;
+    syncBgAdjustUI();
+    draw();
+  });
+}
+if(refBgOffsetXEl){
+  refBgOffsetXEl.addEventListener('input', () => {
+    refImgBgOffsetX = parseInt(refBgOffsetXEl.value);
+    syncBgAdjustUI();
+    draw();
+  });
+}
+if(refBgOffsetYEl){
+  refBgOffsetYEl.addEventListener('input', () => {
+    refImgBgOffsetY = parseInt(refBgOffsetYEl.value);
+    syncBgAdjustUI();
+    draw();
+  });
+}
+if(document.getElementById('refBgResetBtn')){
+  document.getElementById('refBgResetBtn').addEventListener('click', () => {
+    refImgBgScale   = 1.0;
+    refImgBgOffsetX = 0;
+    refImgBgOffsetY = 0;
+    refBgScaleEl.value   = 100;
+    refBgOffsetXEl.value = 0;
+    refBgOffsetYEl.value = 0;
+    syncBgAdjustUI();
+    draw();
+  });
+}
+
+if(refImgSizeSmallBtn){
+  refImgSizeSmallBtn.addEventListener('click', () => {
+    refImgSizePx = 150;
+    refImgSizeSmallBtn.style.fontWeight = 'bold';
+    refImgSizeLargeBtn.style.fontWeight = '';
+    applyRefImgMode();
+  });
+}
+if(refImgSizeLargeBtn){
+  refImgSizeLargeBtn.addEventListener('click', () => {
+    refImgSizePx = 400;
+    refImgSizeLargeBtn.style.fontWeight = 'bold';
+    refImgSizeSmallBtn.style.fontWeight = '';
+    applyRefImgMode();
+  });
+}
+
+/* ===== 参考画像 ===== */
+let refImg = null;       // 読み込んだ Image オブジェクト
+let refImgMode = "bg"; // "left" / "bg"
+let refImgOpacity = 0.5;
+
 /* ===== 描画 ===== */
 function draw(){
-  const cellW = VIEW / gridW;
-  const cellH = VIEW / gridH;
+  const cellW = canvas.width / gridW;
+  const cellH = canvas.height / gridH;
 
   ctx.fillStyle="#fff";
-  ctx.fillRect(0,0,VIEW,VIEW);
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  // 参考画像（背景モード）
+  if(refImg && refImgMode === "bg"){
+    ctx.save();
+    ctx.globalAlpha = refImgOpacity;
+    const iw = canvas.width  * refImgBgScale;
+    const ih = canvas.height * refImgBgScale;
+    const ix = (canvas.width  - iw) / 2 + refImgBgOffsetX;
+    const iy = (canvas.height - ih) / 2 + refImgBgOffsetY;
+    ctx.drawImage(refImg, ix, iy, iw, ih);
+    ctx.restore();
+  }
 
   for(let y=0;y<gridH;y++){
     for(let x=0;x<gridW;x++){
@@ -662,54 +944,174 @@ function draw(){
     }
   }
 
+  // 図形プレビュー（グレーのドットで表示）
+  if(shapePreviewPixels){
+    const previewColor = (tool === "black") ? "rgba(0,0,0,0.4)" : "rgba(200,200,200,0.8)";
+    ctx.fillStyle = previewColor;
+    for(let y=0;y<gridH;y++){
+      for(let x=0;x<gridW;x++){
+        if(shapePreviewPixels[y][x]){
+          ctx.fillRect(x*cellW,y*cellH,cellW,cellH);
+        }
+      }
+    }
+  }
+
   ctx.strokeStyle="#ccc";
   for(let i=0;i<=gridW;i++){
-    ctx.beginPath();ctx.moveTo(i*cellW,0);ctx.lineTo(i*cellW,VIEW);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(i*cellW,0);ctx.lineTo(i*cellW,canvas.height);ctx.stroke();
   }
   for(let j=0;j<=gridH;j++){
-    ctx.beginPath();ctx.moveTo(0,j*cellH);ctx.lineTo(VIEW,j*cellH);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,j*cellH);ctx.lineTo(canvas.width,j*cellH);ctx.stroke();
   }
 }
-draw();
 
-/* ===== Undo ===== */
+/* ===== キャンバスレイアウト更新 ===== */
+function updateCanvasLayout(){
+  const wrap = document.getElementById("canvasWrap");
+
+  if(canvasMode === "current"){
+    canvas.width = currentCanvasSize;
+    canvas.height = currentCanvasSize;
+    canvas.style.width = "95vw";
+    canvas.style.height = "";
+    canvas.style.maxWidth = currentCanvasSize + "px";
+    canvas.style.aspectRatio = "1/1";
+    wrap.style.overflow = "";
+    wrap.style.maxWidth = "";
+    wrap.style.maxHeight = "";
+
+  } else if(canvasMode === "fit"){
+    const cellPx = Math.max(1, Math.floor(800 / Math.max(gridW, gridH)));
+    canvas.width  = cellPx * gridW;
+    canvas.height = cellPx * gridH;
+    canvas.style.width = canvas.width + "px";
+    canvas.style.height = "auto";
+    canvas.style.maxWidth = "95vw";
+    canvas.style.aspectRatio = canvas.width + "/" + canvas.height;
+    wrap.style.overflow = "";
+    wrap.style.maxWidth = "";
+    wrap.style.maxHeight = "";
+
+  } else { // scroll
+    const cellPx = 20;
+    canvas.width  = cellPx * gridW;
+    canvas.height = cellPx * gridH;
+    canvas.style.width = canvas.width + "px";
+    canvas.style.height = canvas.height + "px";
+    canvas.style.maxWidth = "";
+    canvas.style.aspectRatio = "";
+    wrap.style.overflow = "auto";
+    wrap.style.maxWidth = "95vw";
+    wrap.style.maxHeight = "800px";
+  }
+
+  draw();
+  // 参考画像（左隣モード）のサイズ再調整
+  if(typeof applyRefImgMode === "function") applyRefImgMode();
+}
+
+// モード選択ラジオ
+const currentSizeControls = document.getElementById('currentSizeControls');
+document.querySelectorAll('input[name="canvasMode"]').forEach(radio => {
+  radio.addEventListener('change', () => {
+    canvasMode = radio.value;
+    currentSizeControls.style.display = (canvasMode === "current") ? "" : "none";
+    updateCanvasLayout();
+  });
+});
+
+// キャンバス固定サイズボタン
+function updateCvSizeBtns(){
+  document.getElementById('cvSizeS').style.fontWeight = (currentCanvasSize===400)?'bold':'';
+  document.getElementById('cvSizeM').style.fontWeight = (currentCanvasSize===600)?'bold':'';
+  document.getElementById('cvSizeL').style.fontWeight = (currentCanvasSize===800)?'bold':'';
+}
+document.getElementById('cvSizeS').addEventListener('click',()=>{ currentCanvasSize=400; updateCvSizeBtns(); updateCanvasLayout(); });
+document.getElementById('cvSizeM').addEventListener('click',()=>{ currentCanvasSize=600; updateCvSizeBtns(); updateCanvasLayout(); });
+document.getElementById('cvSizeL').addEventListener('click',()=>{ currentCanvasSize=800; updateCvSizeBtns(); updateCanvasLayout(); });
+
+updateCanvasLayout();
+
+/* ===== Undo / Redo ===== */
 function saveHistory(){
   history.push(pixels.map(r=>r.slice()));
   if(history.length>30) history.shift();
+  redoHistory = []; // 新しい操作でredoをクリア
 }
 document.getElementById("undoBtn").onclick=()=>{
   if(history.length===0) return;
+  redoHistory.push(pixels.map(r=>r.slice()));
+  if(redoHistory.length>30) redoHistory.shift();
   pixels = history.pop();
+  draw();
+};
+document.getElementById("redoBtn").onclick=()=>{
+  if(redoHistory.length===0) return;
+  history.push(pixels.map(r=>r.slice()));
+  if(history.length>30) history.shift();
+  pixels = redoHistory.pop();
   draw();
 };
 
 /* ===== キャンバスサイズ変更 ===== */
-function applyGridSize(newW, newH){
-  newW = Math.max(4, Math.min(32, newW|0));
-  newH = Math.max(4, Math.min(32, newH|0));
-  if (newW === gridW && newH === gridH) return;
+function applyGridSizeAsync(newW, newH){
+  newW = Math.max(4, Math.min(200, newW|0));
+  newH = Math.max(4, Math.min(200, newH|0));
+  if(newW === gridW && newH === gridH) return;
 
-  if (!confirm("サイズを変えると現在の絵は消えます。よろしいですか？")) {
-    gridWInput.value = gridW;
-    gridHInput.value = gridH;
-    return;
-  }
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:9999;display:flex;align-items:center;justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#fff;border-radius:8px;padding:24px 28px;min-width:260px;box-shadow:0 4px 24px rgba(0,0,0,.3);font-family:sans-serif;';
+  box.innerHTML = `
+    <div style="font-weight:bold;font-size:15px;margin-bottom:14px;">サイズ変更後の処理を選択</div>
+    <div style="display:flex;flex-direction:column;gap:10px;">
+      <button data-choice="topleft" style="padding:8px 12px;cursor:pointer;border:1px solid #aaa;border-radius:4px;background:#f5f5f5;text-align:left;">左上を起点に保持（はみ出た部分は切り捨て）</button>
+      <button data-choice="center"  style="padding:8px 12px;cursor:pointer;border:1px solid #aaa;border-radius:4px;background:#f5f5f5;text-align:left;">中央寄せで保持（はみ出た部分は切り捨て）</button>
+      <button data-choice="clear"   style="padding:8px 12px;cursor:pointer;border:1px solid #ffb3b3;border-radius:4px;background:#ffecec;text-align:left;">全て消去</button>
+      <button data-choice="cancel"  style="padding:6px 12px;cursor:pointer;border:1px solid #ccc;border-radius:4px;background:#fff;color:#666;">キャンセル</button>
+    </div>`;
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
 
-  gridW = newW;
-  gridH = newH;
-  gridWInput.value = gridW;
-  gridHInput.value = gridH;
-
-  pixels = createEmptyPixels(gridW, gridH);
-  history = [];
-  draw();
+  box.addEventListener('click', e => {
+    const btn = e.target.closest('button[data-choice]');
+    if(!btn) return;
+    const choice = btn.dataset.choice;
+    document.body.removeChild(overlay);
+    if(choice === 'cancel'){
+      gridWInput.value = gridW;
+      gridHInput.value = gridH;
+      return;
+    }
+    saveHistory();
+    const oldPixels = pixels;
+    const oldW = gridW, oldH = gridH;
+    gridW = newW; gridH = newH;
+    gridWInput.value = gridW; gridHInput.value = gridH;
+    if(choice === 'clear'){
+      pixels = createEmptyPixels(gridW, gridH);
+    } else if(choice === 'topleft'){
+      pixels = createEmptyPixels(gridW, gridH);
+      for(let y=0;y<Math.min(oldH,gridH);y++)
+        for(let x=0;x<Math.min(oldW,gridW);x++)
+          pixels[y][x] = oldPixels[y][x];
+    } else if(choice === 'center'){
+      pixels = createEmptyPixels(gridW, gridH);
+      const ox=Math.round((gridW-oldW)/2), oy=Math.round((gridH-oldH)/2);
+      for(let y=0;y<oldH;y++) for(let x=0;x<oldW;x++){
+        const nx=x+ox, ny=y+oy;
+        if(nx>=0&&nx<gridW&&ny>=0&&ny<gridH) pixels[ny][nx]=oldPixels[y][x];
+      }
+    }
+    redoHistory = [];
+    updateCanvasLayout();
+  });
 }
-gridWInput.addEventListener("change", ()=>{
-  applyGridSize(gridWInput.value, gridHInput.value);
-});
-gridHInput.addEventListener("change", ()=>{
-  applyGridSize(gridWInput.value, gridHInput.value);
-});
+document.getElementById("applySizeBtn").onclick = ()=>{
+  applyGridSizeAsync(gridWInput.value, gridHInput.value);
+};
 
 /* ===== 描く（Pointer） ===== */
 let drawing=false;
@@ -719,12 +1121,29 @@ canvas.addEventListener("pointerdown",e=>{
   const y = Math.floor((e.clientY-rect.top )/rect.height * gridH);
   if(x<0||y<0||x>=gridW||y>=gridH){ e.preventDefault(); return; }
 
+  // 図形モードならドラッグ開始点を記録
+  if(drawMode === "line" || drawMode === "rect" || drawMode === "ellipse"){
+    shapeStart = {x, y};
+    shapeEnd = {x, y};
+    isShapeDrawing = true;
+    e.preventDefault();
+    return;
+  }
+
+  // 右クリック時は選択していない色で描画
+  let origTool = tool;
+  let isRight = (e.button === 2);
+  if(isRight) {
+    tool = (tool === "black") ? "white" : "black";
+  }
+
   if(drawMode === "fill"){
     saveHistory();
     const newVal = (tool === "black") ? 1 : 0;
     floodFill(x, y, newVal);
     draw();
     drawing = false;
+    tool = origTool;
     e.preventDefault();
     return;
   }
@@ -732,12 +1151,130 @@ canvas.addEventListener("pointerdown",e=>{
   drawing=true;
   saveHistory();
   paint(e);
+  tool = origTool;
+  e.preventDefault();
+});
+
+// 右クリック時のコンテキストメニュー抑制
+canvas.addEventListener("contextmenu", e => {
   e.preventDefault();
 });
 canvas.addEventListener("pointermove",e=>{
+  if(isShapeDrawing && (drawMode === "line" || drawMode === "rect" || drawMode === "ellipse")){
+    // ドラッグ中の終点を記録し、プレビュー描画
+    const rect = canvas.getBoundingClientRect();
+    const x = Math.floor((e.clientX-rect.left)/rect.width  * gridW);
+    const y = Math.floor((e.clientY-rect.top )/rect.height * gridH);
+    shapeEnd = {x, y};
+    shapePreviewPixels = computeShapePixels(shapeStart, shapeEnd, drawMode);
+    draw();
+    e.preventDefault();
+    return;
+  }
   if(drawing) paint(e); e.preventDefault();
 });
-window.addEventListener("pointerup",()=>drawing=false);
+window.addEventListener("pointerup",()=>{
+  if(isShapeDrawing && shapeStart && shapeEnd && (drawMode === "line" || drawMode === "rect" || drawMode === "ellipse")){
+    // 図形モード: 確定描画
+    saveHistory();
+    drawShapeToPixels(shapeStart, shapeEnd, drawMode, tool);
+    isShapeDrawing = false;
+    shapeStart = null;
+    shapeEnd = null;
+    shapePreviewPixels = null;
+    draw();
+  }else{
+    // 通常モード: 描画終了
+    drawing = false;
+  }
+});
+// ===== 図形プレビュー用ピクセル配列を計算 =====
+function computeShapePixels(start, end, mode){
+  const tmp = createEmptyPixels(gridW, gridH);
+  const setPix = (x, y) => {
+    if(x>=0 && y>=0 && x<gridW && y<gridH) tmp[y][x]=1;
+  };
+  _fillShapePixels(start, end, mode, setPix);
+  return tmp;
+}
+
+// ===== 図形確定描画 =====
+function drawShapeToPixels(start, end, mode, colorTool){
+  // colorTool: "black"なら1, "white"なら0
+  const val = (colorTool === "black") ? 1 : 0;
+  const setPix = (x, y) => {
+    if(x>=0 && y>=0 && x<gridW && y<gridH) pixels[y][x]=val;
+  };
+  _fillShapePixels(start, end, mode, setPix);
+}
+
+// ===== 図形ピクセル計算の共通処理 =====
+function _fillShapePixels(start, end, mode, setPix){
+  if(mode === "line"){
+    // Bresenham's line algorithm
+    let x0 = start.x, y0 = start.y, x1 = end.x, y1 = end.y;
+    let dx = Math.abs(x1-x0), dy = Math.abs(y1-y0);
+    let sx = x0 < x1 ? 1 : -1;
+    let sy = y0 < y1 ? 1 : -1;
+    let err = dx-dy;
+    while(true){
+      setPix(x0, y0);
+      if(x0===x1 && y0===y1) break;
+      let e2 = 2*err;
+      if(e2 > -dy){ err -= dy; x0 += sx; }
+      if(e2 < dx){ err += dx; y0 += sy; }
+    }
+  }else if(mode === "rect"){
+    let x0 = Math.min(start.x, end.x), y0 = Math.min(start.y, end.y);
+    let x1 = Math.max(start.x, end.x), y1 = Math.max(start.y, end.y);
+    for(let x=x0;x<=x1;x++){ setPix(x, y0); setPix(x, y1); }
+    for(let y=y0;y<=y1;y++){ setPix(x0, y); setPix(x1, y); }
+  }else if(mode === "ellipse"){
+    // 中心 = start、半径 = ドラッグ距離
+    let cx = start.x, cy = start.y;
+    let rx = Math.abs(end.x - start.x), ry = Math.abs(end.y - start.y);
+    rx = Math.max(1, rx); ry = Math.max(1, ry);
+    // 楕円の輪郭（中点楕円法）
+    let x = 0, y = Math.round(ry);
+    let rx2 = rx*rx, ry2 = ry*ry;
+    let twoRx2 = 2*rx2, twoRy2 = 2*ry2;
+    let px = 0, py = twoRx2*y;
+    // 領域1
+    let p = Math.round(ry2 - (rx2*ry) + (0.25*rx2));
+    while(px < py){
+      setPix(Math.round(cx+x), Math.round(cy+y));
+      setPix(Math.round(cx-x), Math.round(cy+y));
+      setPix(Math.round(cx+x), Math.round(cy-y));
+      setPix(Math.round(cx-x), Math.round(cy-y));
+      x++;
+      px += twoRy2;
+      if(p < 0){
+        p += ry2 + px;
+      }else{
+        y--;
+        py -= twoRx2;
+        p += ry2 + px - py;
+      }
+    }
+    // 領域2
+    p = Math.round(ry2*(x+0.5)*(x+0.5) + rx2*(y-1)*(y-1) - rx2*ry2);
+    while(y >= 0){
+      setPix(Math.round(cx+x), Math.round(cy+y));
+      setPix(Math.round(cx-x), Math.round(cy+y));
+      setPix(Math.round(cx+x), Math.round(cy-y));
+      setPix(Math.round(cx-x), Math.round(cy-y));
+      y--;
+      py -= twoRx2;
+      if(p > 0){
+        p += rx2 - py;
+      }else{
+        x++;
+        px += twoRy2;
+        p += rx2 - py + px;
+      }
+    }
+  }
+}
 window.addEventListener("pointercancel",()=>drawing=false);
 
 function paint(e){
@@ -745,7 +1282,21 @@ function paint(e){
   const x = Math.floor((e.clientX-rect.left)/rect.width  * gridW);
   const y = Math.floor((e.clientY-rect.top )/rect.height * gridH);
   if(x<0||y<0||x>=gridW||y>=gridH)return;
-  pixels[y][x]=(tool==="black")?1:0;
+  // 右クリックまたは右ボタン押下中なら反対色
+  let isRight = false;
+  if (e.buttons !== undefined) {
+    // e.buttons: bit 1=左, 2=右, 4=中
+    isRight = (e.buttons & 2) !== 0;
+  } else if (e.button !== undefined) {
+    isRight = (e.button === 2);
+  }
+  let drawColor;
+  if(isRight){
+    drawColor = (tool === "black") ? 0 : 1;
+  }else{
+    drawColor = (tool === "black") ? 1 : 0;
+  }
+  pixels[y][x] = drawColor;
   draw();
 }
 
@@ -757,16 +1308,26 @@ whiteBtn.onclick=()=>{tool="white";whiteBtn.classList.add("btnActive");blackBtn.
 
 
 /* ===== 描画モード（ペン / 塗りつぶし） ===== */
+
 const penModeBtn = document.getElementById("penModeBtn");
 const fillModeBtn = document.getElementById("fillModeBtn");
+const lineModeBtn = document.getElementById("lineModeBtn");
+const rectModeBtn = document.getElementById("rectModeBtn");
+const ellipseModeBtn = document.getElementById("ellipseModeBtn");
 
 function setDrawMode(m){
   drawMode = m;
   if (penModeBtn) penModeBtn.classList.toggle("btnActive", drawMode === "pen");
   if (fillModeBtn) fillModeBtn.classList.toggle("btnActive", drawMode === "fill");
+  if (lineModeBtn) lineModeBtn.classList.toggle("btnActive", drawMode === "line");
+  if (rectModeBtn) rectModeBtn.classList.toggle("btnActive", drawMode === "rect");
+  if (ellipseModeBtn) ellipseModeBtn.classList.toggle("btnActive", drawMode === "ellipse");
 }
 if (penModeBtn) penModeBtn.onclick = ()=>setDrawMode("pen");
 if (fillModeBtn) fillModeBtn.onclick = ()=>setDrawMode("fill");
+if (lineModeBtn) lineModeBtn.onclick = ()=>setDrawMode("line");
+if (rectModeBtn) rectModeBtn.onclick = ()=>setDrawMode("rect");
+if (ellipseModeBtn) ellipseModeBtn.onclick = ()=>setDrawMode("ellipse");
 setDrawMode("pen");
 
 /* ===== 塗りつぶし（4近傍フラッドフィル） ===== */
@@ -808,6 +1369,17 @@ function flipHorizontal(){
   pixels=newPix;
   draw();
 }
+function flipVertical(){
+  saveHistory();
+  const newPix=createEmptyPixels(gridW, gridH);
+  for(let y=0;y<gridH;y++){
+    for(let x=0;x<gridW;x++){
+      newPix[y][x]=pixels[gridH-1-y][x];
+    }
+  }
+  pixels=newPix;
+  draw();
+}
 function shift(dx,dy){
   if(dx===0 && dy===0) return;
   saveHistory();
@@ -829,10 +1401,36 @@ function shift(dx,dy){
   draw();
 }
 document.getElementById("flipHBtn").onclick      = ()=>flipHorizontal();
+document.getElementById("flipVBtn").onclick      = ()=>flipVertical();
 document.getElementById("shiftUpBtn").onclick    = ()=>shift(0,  1);
 document.getElementById("shiftDownBtn").onclick  = ()=>shift(0, -1);
 document.getElementById("shiftLeftBtn").onclick  = ()=>shift(1,  0);
 document.getElementById("shiftRightBtn").onclick = ()=>shift(-1, 0);
+
+function rotateCW(){
+  saveHistory();
+  const newPix = createEmptyPixels(gridH, gridW);
+  for(let y=0;y<gridH;y++)
+    for(let x=0;x<gridW;x++)
+      newPix[x][gridH-1-y] = pixels[y][x];
+  const tmp=gridW; gridW=gridH; gridH=tmp;
+  gridWInput.value=gridW; gridHInput.value=gridH;
+  pixels=newPix;
+  updateCanvasLayout();
+}
+function rotateCCW(){
+  saveHistory();
+  const newPix = createEmptyPixels(gridH, gridW);
+  for(let y=0;y<gridH;y++)
+    for(let x=0;x<gridW;x++)
+      newPix[gridW-1-x][y] = pixels[y][x];
+  const tmp=gridW; gridW=gridH; gridH=tmp;
+  gridWInput.value=gridW; gridHInput.value=gridH;
+  pixels=newPix;
+  updateCanvasLayout();
+}
+document.getElementById("rotateCWBtn").onclick  = ()=>rotateCW();
+document.getElementById("rotateCCWBtn").onclick = ()=>rotateCCW();
 
 /* ===== サンプル呼び出し ===== */
 document.getElementById("applySampleBtn").onclick=()=>{
@@ -917,18 +1515,25 @@ function makeBitmap_Adafruit(invert){
   return out;
 }
 function buildCode(){
-  const name="PLAYER_BMP";
+  const rawName = document.getElementById("varName").value.trim();
+  const name = rawName || "PLAYER_BMP";
   const invertOutput = (outputBg === "black");
-  const arr=makeBitmap_Adafruit(invertOutput);
-  let out=`// Adafruit_SSD1306 + drawBitmap 用 (${gridW}x${gridH})${invertOutput ? "（白黒反転: 出力のみ）" : ""}
-`;
-  out+=`const uint8_t ${name}[] PROGMEM = {\n  `;
-  arr.forEach((b,i)=>{
-    out+="0x"+b.toString(16).padStart(2,"0");
-    if(i<arr.length-1) out+=", ";
-    if((i+1)%12===0) out+="\n  ";
-  });
-  out+=`\n};\n// display.drawBitmap(x, y, ${name}, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  const arr = makeBitmap_Adafruit(invertOutput);
+  let out = `// Adafruit_SSD1306 + drawBitmap 用\n`;
+  out += `// 例：display.drawBitmap(x, y, ${name}, ${gridW}, ${gridH}, SSD1306_WHITE);\n`;
+  if(invertOutput) out += `// （白黒反転: 出力のみ）\n`;
+  out += `const uint8_t ${name}[] PROGMEM = \n{\n`;
+  const COLS = 12;
+  for(let i = 0; i < arr.length; i++){
+    if(i % COLS === 0) out += "  ";
+    out += "0x" + arr[i].toString(16).padStart(2, "0");
+    if(i < arr.length - 1){
+      out += ", ";
+      if((i + 1) % COLS === 0) out += "\n";
+    }
+  }
+  if(arr.length % COLS !== 0) out += "\n";
+  out += `\n}; //(${gridW}x${gridH})`;
   return out;
 }
 
@@ -942,7 +1547,8 @@ function updateOutputBg(){
   // すでにコードが表示されている場合は即更新
   if (codeText && codeText.value && codeText.value.trim().length > 0) {
     codeText.value = buildCode();
-    codeHint.textContent = `使用例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+    const n = document.getElementById("varName").value.trim() || "PLAYER_BMP";
+    codeHint.textContent = `使用例：display.drawBitmap(x, y, ${n}, ${gridW}, ${gridH}, SSD1306_WHITE);`;
   }
 }
 if (outBgWhite) outBgWhite.addEventListener("change", updateOutputBg);
@@ -951,17 +1557,87 @@ updateOutputBg();
 const codeHint=document.getElementById("codeHint");
 document.getElementById("codeBtn").onclick=()=>{
   codeText.value=buildCode();
-  codeHint.textContent = `使用例：display.drawBitmap(x, y, PLAYER_BMP, ${gridW}, ${gridH}, SSD1306_WHITE);`;
+  const n = document.getElementById("varName").value.trim() || "PLAYER_BMP";
+  codeHint.textContent = `使用例：display.drawBitmap(x, y, ${n}, ${gridW}, ${gridH}, SSD1306_WHITE);`;
   codeArea.style.display="block";
   codeArea.scrollIntoView({behavior:"smooth", block:"nearest"});
 };
 
+/* ===== コードから復元 ===== */
+document.getElementById("importCodeBtn").onclick = ()=>{
+  const src = document.getElementById("importCodeText").value;
+  const msg = document.getElementById("importCodeMsg");
+  // サイズを drawBitmap コメントから取得 (W, H)
+  let w = 0, h = 0;
+  const sizeM = src.match(/drawBitmap\s*\([^)]+,\s*(\d+)\s*,\s*(\d+)\s*,/);
+  if(sizeM){ w = parseInt(sizeM[1]); h = parseInt(sizeM[2]); }
+  // fallback: //(WxH) または (WxH) 形式のコメント
+  if(!w || !h){
+    const hdrM = src.match(/\((\d+)\s*[xX×]\s*(\d+)\)/);
+    if(hdrM){ w = parseInt(hdrM[1]); h = parseInt(hdrM[2]); }
+  }
+  if(!w || !h || w < 4 || w > 200 || h < 4 || h > 200){
+    msg.textContent = "❌ サイズを解析できませんでした。コードをそのまま貼り付けてください。";
+    return;
+  }
+  // 16進数バイト列を抽出
+  const hexes = src.match(/0x[0-9a-fA-F]{2}/gi);
+  if(!hexes){
+    msg.textContent = "❌ バイトデータが見つかりません。";
+    return;
+  }
+  const bytes = hexes.map(s => parseInt(s, 16));
+  const bytesPerRow = Math.ceil(w / 8);
+  const expected = bytesPerRow * h;
+  if(bytes.length < expected){
+    msg.textContent = `❌ データが不足しています（期待: ${expected}バイト, 実際: ${bytes.length}バイト）`;
+    return;
+  }
+  const doInvert = document.getElementById("importInvertChk").checked;
+  if(!confirm(`${w}×${h}のドット絵に復元します。現在の内容は消えます。よろしいですか？`)) return;
+  saveHistory();
+  gridW = w; gridH = h;
+  gridWInput.value = gridW; gridHInput.value = gridH;
+  pixels = createEmptyPixels(gridW, gridH);
+  redoHistory = [];
+  updateCanvasLayout();
+  for(let y = 0; y < h; y++){
+    for(let bx = 0; bx < bytesPerRow; bx++){
+      let b = bytes[y * bytesPerRow + bx];
+      if(doInvert) b = (~b) & 0xFF;
+      for(let bit = 0; bit < 8; bit++){
+        const x = bx * 8 + bit;
+        if(x < w){
+          pixels[y][x] = (b & (1 << (7 - bit))) ? 1 : 0;
+        }
+      }
+    }
+  }
+  draw();
+  msg.textContent = `✅ ${w}×${h} で復元しました。`;
+};
+
 /* ===== コピー ===== */
+const copyMsg = document.getElementById("copyMsg");
+function showCopyMsg(text){
+  copyMsg.textContent = text;
+  clearTimeout(showCopyMsg._t);
+  showCopyMsg._t = setTimeout(()=>{ copyMsg.textContent=""; }, 2000);
+}
 document.getElementById("copyBtn").onclick=()=>{
   codeText.focus();
   codeText.select();
   document.execCommand("copy");
-  alert("コピーしました！");
+  showCopyMsg("✔ コピーしました");
+};
+document.getElementById("copyArrayBtn").onclick=()=>{
+  const code = codeText.value;
+  const start = code.indexOf("{");
+  const match = code.match(/\};\s*\/\/\(\d+x\d+\)/);
+  if(start === -1 || !match){ showCopyMsg("⚠ コードを先に生成してください"); return; }
+  const end = code.indexOf(match[0]) + match[0].length;
+  const arr = code.slice(start, end);
+  navigator.clipboard ? navigator.clipboard.writeText(arr).then(()=>showCopyMsg("✔ 配列部分をコピーしました")) : (()=>{ const ta=document.createElement("textarea"); ta.value=arr; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); showCopyMsg("✔ 配列部分をコピーしました"); })();
 };
 
 
