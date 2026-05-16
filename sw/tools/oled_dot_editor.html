@@ -1183,27 +1183,24 @@ canvas.addEventListener("pointerdown",e=>{
   }
 
   // 右クリック時は選択していない色で描画
-  let origTool = tool;
-  let isRight = (e.button === 2);
-  if(isRight) {
-    tool = (tool === "black") ? "white" : "black";
-  }
+  const isRight = (e.button === 2);
 
   if(drawMode === "fill"){
     saveHistory();
-    const newVal = (tool === "black") ? 1 : 0;
+    const newVal = isRight
+      ? ((tool === "black") ? 0 : 1)
+      : ((tool === "black") ? 1 : 0);
     floodFill(x, y, newVal);
     draw();
     drawing = false;
-    tool = origTool;
     e.preventDefault();
     return;
   }
 
+  // ペンモード: paint() が e.buttons で右クリックを判定するので直接呼ぶ
   drawing=true;
   saveHistory();
   paint(e);
-  tool = origTool;
   e.preventDefault();
 });
 
