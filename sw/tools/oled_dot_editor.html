@@ -51,6 +51,10 @@ body{
   touch-action:none;
   display:block;
 }
+#viewCanvas.dark-border{
+  border-color:#000;
+  background:#000;
+}
 
 /* 右パネル（全体） */
 .rightPanel{
@@ -311,6 +315,17 @@ body{
         <button id="cvSizeL" style="width:auto; font-size:12px; padding:1px 8px; font-weight:bold;">大</button>
       </span>
     </div>
+    <!-- 表示オプション行 -->
+    <div style="font-size:13px; display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:2px 2px;">
+      <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="showGridChk" checked> グリッド線</label>
+      <label style="display:flex;align-items:center;gap:4px;"><input type="checkbox" id="showCenterChk"> 中心線</label>
+      <span style="display:flex;align-items:center;gap:6px;">
+        | スケール：
+        <button id="scaleDownBtn" style="width:auto;font-size:12px;padding:1px 8px;">÷2</button>
+        <button id="scaleUpBtn"   style="width:auto;font-size:12px;padding:1px 8px;">×2</button>
+        <button id="scaleCustomBtn" style="width:auto;font-size:12px;padding:1px 8px;">任意倍率</button>
+      </span>
+    </div>
     <div id="canvasWrap">
       <img id="refImgEl" alt="参考画像">
       <canvas id="viewCanvas" width="600" height="600"></canvas>
@@ -340,8 +355,12 @@ body{
         <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
           <button id="copyBtn" class="btnCopy" style="padding:8px 20px; font-size:14px;">全体コピー📋</button>
           <button id="copyArrayBtn" class="btnCopy" style="padding:8px 20px; font-size:14px;">配列部分コピー📋</button>
+          <button id="pngExportBtn" class="btnCopy" style="padding:8px 20px; font-size:14px;">PNG書き出し🖼️</button>
+          <label style="font-size:12px;"><input type="radio" name="pngSize" value="dot" checked> ドット絵サイズ</label>
+          <label style="font-size:12px;"><input type="radio" name="pngSize" value="canvas"> キャンバスサイズ</label>
           <span id="copyMsg" style="font-size:12px; color:#2a7a2a;"></span>
         </div>
+        <div id="hexPreview" style="margin-top:8px; font-size:12px; color:#555;"></div>
 
         <div class="smallNote" id="codeHint"></div>
       </div>
@@ -402,6 +421,9 @@ body{
       <div class="grid2" style="margin-bottom:10px;">
         <button id="flipHBtn" class="btnFlip">左右反転⇌</button>
         <button id="flipVBtn" class="btnFlip">上下反転⇅</button>
+      </div>
+      <div style="margin-bottom:10px;">
+        <button id="invertBtn" class="btnFlip" style="width:100%;">&#x25D1; 白黒反転</button>
       </div>
       <div class="grid2" style="margin-bottom:10px;">
         <button id="clearBtn" class="btnClear" style="grid-column:1/-1;">全部消す🧹</button>
@@ -477,7 +499,7 @@ body{
       <div style="display:flex; flex-direction:column; gap:10px; margin-bottom:10px;">
         <div class="btnWrap">
           <button id="importBtn" class="btnSample">リストを読込み📥</button>
-          <div class="btnHelp">以前保存した .json を読込んで、登録リストを更新します（今のリストは上書き）</div>
+          <div class="btnHelp">以前保存した .json を読込んで、登録リストを更新します</div>
         </div>
         <div class="btnWrap">
           <button id="exportBtn" class="btnRegister">リストを書出し📤</button>
@@ -498,16 +520,16 @@ body{
         </div>
         <div class="btnWrap">
           <button id="registerSampleBtn" class="btnRegister">ドット絵を<br/>リスト登録</button>
-          <div class="btnHelp">今のドット絵を登録リストに追加します（同じ名前は上書き）</div>
+          <div class="btnHelp">今のドット絵を登録リストに追加します</div>
         </div>
       </div>
 
       <div class="btnWrap">
         <button id="deleteSampleBtn" class="btnDelete">リストから削除</button>
-        <div class="btnHelp">登録リストから削除します（※ファイルに残すには「リストを書出」で保存してね）</div>
+        <div class="btnHelp">登録リストから削除します</div>
       </div>
 
-      <div class="smallNote" id="fileStatus" style="margin-top:10px;">※ このアプリは自動保存しません。変更したら「リストを書出」で保存してね。</div>
+      <div class="smallNote" id="fileStatus" style="margin-top:10px;">※ このアプリは自動保存しません。変更したら「リストを書出」で保存してください。</div>
     </div>
 
   </div>
@@ -565,7 +587,7 @@ function refreshSampleList(){
   });
 }
 refreshSampleList();
-setFileStatus('※ このアプリは自動保存しません。変更したら「リストを書出」で保存してね。');
+setFileStatus('※ このアプリは自動保存しません。変更したら「リストを書出」で保存してください。');
 
 function buildExportObject(){
   return {
@@ -915,6 +937,10 @@ let refImg = null;       // 読み込んだ Image オブジェクト
 let refImgMode = "bg"; // "left" / "bg"
 let refImgOpacity = 0.5;
 
+/* ===== 表示オプション ===== */
+let showGrid   = true;
+let showCenter = false;
+
 /* ===== 描画 ===== */
 function draw(){
   const cellW = canvas.width / gridW;
@@ -958,11 +984,23 @@ function draw(){
   }
 
   ctx.strokeStyle="#ccc";
-  for(let i=0;i<=gridW;i++){
-    ctx.beginPath();ctx.moveTo(i*cellW,0);ctx.lineTo(i*cellW,canvas.height);ctx.stroke();
+  if(showGrid){
+    for(let i=0;i<=gridW;i++){
+      ctx.beginPath();ctx.moveTo(i*cellW,0);ctx.lineTo(i*cellW,canvas.height);ctx.stroke();
+    }
+    for(let j=0;j<=gridH;j++){
+      ctx.beginPath();ctx.moveTo(0,j*cellH);ctx.lineTo(canvas.width,j*cellH);ctx.stroke();
+    }
   }
-  for(let j=0;j<=gridH;j++){
-    ctx.beginPath();ctx.moveTo(0,j*cellH);ctx.lineTo(canvas.width,j*cellH);ctx.stroke();
+  if(showCenter){
+    ctx.save();
+    ctx.strokeStyle="rgba(255,0,0,0.5)";
+    ctx.lineWidth=1;
+    ctx.setLineDash([4,3]);
+    const cx=canvas.width/2, cy=canvas.height/2;
+    ctx.beginPath();ctx.moveTo(cx,0);ctx.lineTo(cx,canvas.height);ctx.stroke();
+    ctx.beginPath();ctx.moveTo(0,cy);ctx.lineTo(canvas.width,cy);ctx.stroke();
+    ctx.restore();
   }
 }
 
@@ -1053,6 +1091,20 @@ document.getElementById("redoBtn").onclick=()=>{
   pixels = redoHistory.pop();
   draw();
 };
+
+document.addEventListener('keydown', e => {
+  // テキスト入力中は無視
+  const tag = document.activeElement.tagName;
+  if(tag === 'INPUT' || tag === 'TEXTAREA') return;
+  if(e.key === 'z' && (e.ctrlKey || e.metaKey) && !e.shiftKey){
+    e.preventDefault();
+    document.getElementById("undoBtn").click();
+  } else if((e.key === 'y' && (e.ctrlKey || e.metaKey)) ||
+            (e.key === 'z' && (e.ctrlKey || e.metaKey) && e.shiftKey)){
+    e.preventDefault();
+    document.getElementById("redoBtn").click();
+  }
+});
 
 /* ===== キャンバスサイズ変更 ===== */
 function applyGridSizeAsync(newW, newH){
@@ -1402,6 +1454,11 @@ function shift(dx,dy){
 }
 document.getElementById("flipHBtn").onclick      = ()=>flipHorizontal();
 document.getElementById("flipVBtn").onclick      = ()=>flipVertical();
+document.getElementById("invertBtn").onclick     = ()=>{
+  saveHistory();
+  for(let y=0;y<gridH;y++) for(let x=0;x<gridW;x++) pixels[y][x] = pixels[y][x] ? 0 : 1;
+  draw();
+};
 document.getElementById("shiftUpBtn").onclick    = ()=>shift(0,  1);
 document.getElementById("shiftDownBtn").onclick  = ()=>shift(0, -1);
 document.getElementById("shiftLeftBtn").onclick  = ()=>shift(1,  0);
@@ -1476,7 +1533,7 @@ document.getElementById("registerSampleBtn").onclick=()=>{
     data: pixels.map(r=>r.slice())
   };
   refreshSampleList();
-  setFileStatus("※ 変更しました。必要なら『リストを書出』で保存してね。");
+  setFileStatus("※ 変更しました。");
   sampleSelect.value=name;
 };
 document.getElementById("deleteSampleBtn").onclick=()=>{
@@ -1485,7 +1542,7 @@ document.getElementById("deleteSampleBtn").onclick=()=>{
   if(!confirm("削除しますか？")) return;
   delete samples[name];
   refreshSampleList();
-  setFileStatus("※ 変更しました。必要なら『リストを書出』で保存してね。");
+  setFileStatus("※ 変更しました。");
   sampleSelect.value="";
 };
 
@@ -1544,6 +1601,9 @@ const outBgWhite = document.getElementById("outBgWhite");
 const outBgBlack = document.getElementById("outBgBlack");
 function updateOutputBg(){
   outputBg = (outBgBlack && outBgBlack.checked) ? "black" : "white";
+  // キャンバス枠色更新
+  if(outputBg === "black") canvas.classList.add("dark-border");
+  else canvas.classList.remove("dark-border");
   // すでにコードが表示されている場合は即更新
   if (codeText && codeText.value && codeText.value.trim().length > 0) {
     codeText.value = buildCode();
@@ -1640,8 +1700,103 @@ document.getElementById("copyArrayBtn").onclick=()=>{
   navigator.clipboard ? navigator.clipboard.writeText(arr).then(()=>showCopyMsg("✔ 配列部分をコピーしました")) : (()=>{ const ta=document.createElement("textarea"); ta.value=arr; document.body.appendChild(ta); ta.select(); document.execCommand("copy"); document.body.removeChild(ta); showCopyMsg("✔ 配列部分をコピーしました"); })();
 };
 
+/* ===== PNG書き出し ===== */
+document.getElementById("pngExportBtn").onclick = () => {
+  const pngMode = document.querySelector('input[name="pngSize"]:checked').value;
+  const tmp = document.createElement("canvas");
+  const bg = (outputBg === "black") ? "#000" : "#fff";
+  const fg = (outputBg === "black") ? "#fff" : "#000";
+  if(pngMode === "canvas"){
+    // キャンバスの表示サイズそのままで書き出し
+    tmp.width  = canvas.width;
+    tmp.height = canvas.height;
+    const tc = tmp.getContext("2d");
+    tc.fillStyle = bg;
+    tc.fillRect(0, 0, tmp.width, tmp.height);
+    const cellW = tmp.width  / gridW;
+    const cellH = tmp.height / gridH;
+    tc.fillStyle = fg;
+    for(let y=0; y<gridH; y++)
+      for(let x=0; x<gridW; x++)
+        if(pixels[y][x]) tc.fillRect(x*cellW, y*cellH, cellW, cellH);
+  } else {
+    // ドット絵サイズ（1dot=1px）
+    tmp.width  = gridW;
+    tmp.height = gridH;
+    const tc = tmp.getContext("2d");
+    tc.fillStyle = bg;
+    tc.fillRect(0, 0, gridW, gridH);
+    tc.fillStyle = fg;
+    for(let y=0; y<gridH; y++)
+      for(let x=0; x<gridW; x++)
+        if(pixels[y][x]) tc.fillRect(x, y, 1, 1);
+  }
+  const a = document.createElement("a");
+  a.href = tmp.toDataURL("image/png");
+  const name = (document.getElementById("varName").value.trim() || "dot") + ".png";
+  a.download = name;
+  a.click();
+  showCopyMsg("✔ PNGを保存しました");
+};
+
+/* ===== HEXプレビュー ===== */
+const hexPreviewEl = document.getElementById("hexPreview");
+function updateHexPreview(){
+  if(!hexPreviewEl) return;
+  const arr = makeBitmap_Adafruit(outputBg === "black");
+  hexPreviewEl.textContent = `バイト数: ${arr.length} bytes (${gridW}×${gridH}, ${Math.ceil(gridW/8)} bytes/行)`;
+}
+// codeBtnクリック後も更新されるよう既存codeBtnのonclickに追記
+const _origCodeBtnClick = document.getElementById("codeBtn").onclick;
+document.getElementById("codeBtn").onclick = function(){
+  if(_origCodeBtnClick) _origCodeBtnClick.call(this);
+  updateHexPreview();
+};
+
+/* ===== グリッド線・中心線トグル ===== */
+document.getElementById("showGridChk").addEventListener("change", e => {
+  showGrid = e.target.checked;
+  draw();
+});
+document.getElementById("showCenterChk").addEventListener("change", e => {
+  showCenter = e.target.checked;
+  draw();
+});
+
+/* ===== スケールアップ/ダウン ===== */
+function scalePixels(sx, sy){
+  // 新グリッドサイズ
+  const nw = Math.max(4, Math.min(200, Math.round(gridW * sx)));
+  const nh = Math.max(4, Math.min(200, Math.round(gridH * sy)));
+  saveHistory();
+  const newPix = createEmptyPixels(nw, nh);
+  for(let y=0; y<nh; y++)
+    for(let x=0; x<nw; x++){
+      const ox = Math.floor(x / sx);
+      const oy = Math.floor(y / sy);
+      if(ox < gridW && oy < gridH) newPix[y][x] = pixels[oy][ox];
+    }
+  gridW = nw; gridH = nh;
+  gridWInput.value = gridW; gridHInput.value = gridH;
+  pixels = newPix;
+  redoHistory = [];
+  updateCanvasLayout();
+}
+document.getElementById("scaleDownBtn").onclick = () => scalePixels(0.5, 0.5);
+document.getElementById("scaleUpBtn").onclick   = () => scalePixels(2, 2);
+document.getElementById("scaleCustomBtn").onclick = () => {
+  const v = prompt("倍率を入力してください（例: 1.5 / 0.5）", "2");
+  if(v === null) return;
+  const f = parseFloat(v);
+  if(!isFinite(f) || f <= 0){ alert("無効な値です"); return; }
+  scalePixels(f, f);
+};
+
+/* ===== 背景黒時のキャンバス枠色 ===== */
+function updateCanvasBorderColor(){
+  if(outputBg === "black") canvas.classList.add("dark-border");
+  else canvas.classList.remove("dark-border");
+}
+updateCanvasBorderColor();
 
 </script>
-
-</body>
-</html>
